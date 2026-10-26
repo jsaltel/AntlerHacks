@@ -51,6 +51,7 @@ Browser (Chrome/Edge)                               Next.js server
 | `src/lib/tune/workbench.ts` | Tool execution on the simulated engine, the QA safety gate and the tune package |
 | `src/lib/tune/pipeline.ts` | Plan → calibrate → simulate → QA loop (up to 3 rounds) |
 | `src/app/tune/page.tsx`, `src/app/sim/page.tsx` | Tuning lab and car simulator pages |
+| `src/components/SketchfabCar.tsx` | Embedded Sketchfab 3D cars: camera views and paint via the Viewer API |
 
 ## Pages
 
@@ -64,7 +65,7 @@ Browser (Chrome/Edge)                               Next.js server
   * **QA & safety reviewer** runs the automated gate and approves the tune or sends it back with numeric fixes.
   
   You can also edit the maps by hand. Approved tunes export as a JSON package or go to the simulator. Tunes stay virtual: emissions controls are never touched, and flashing a real ECU needs a platform-specific flash tool (an ELM327 can't write maps).
-* **Simulator** (`/sim`): drive the car in real time (throttle slider, arrow keys, auto launch or cruise) with stock or saved tunes, change conditions, inject faults (clogged injectors, boost leak, heat soak, bad fuel) and compare stock vs tune across a test matrix.
+* **Simulator** (`/sim`): five cars (Civic Si, GTI, Mustang GT, Alfa Romeo Giulia Quadrifoglio, Jeep Wrangler Rubicon JK). The Giulia and Wrangler show an interactive 3D model embedded from Sketchfab (by MaximePages and ROH3D) through the Viewer API, with camera views and, for the Giulia, paint colors. The models are the creators' work and are embedded, not copied into this repo. Drive the car in real time (throttle slider, arrow keys, auto launch or cruise) with stock or saved tunes, change conditions, inject faults (clogged injectors, boost leak, heat soak, bad fuel) and compare stock vs tune across a test matrix.
 
 ## Run it
 

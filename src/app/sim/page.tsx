@@ -5,6 +5,7 @@ import { deleteTune, loadTunes } from "@/lib/tune/storage";
 import type { TunePackage } from "@/lib/tune/workbench";
 import { LineChart } from "@/components/LineChart";
 import { XYChart } from "@/components/XYChart";
+import { CAR_MODELS, SketchfabCar } from "@/components/SketchfabCar";
 
 const FAULTS = [
   { id: "none", label: "No faults" },
@@ -77,7 +78,7 @@ function Dial({ value, max, label, unit, redFrom }: { value: number; max: number
 }
 
 export default function SimPage() {
-  const [engineId, setEngineId] = useState("gti");
+  const [engineId, setEngineId] = useState("giulia_qv");
   const [tunes, setTunes] = useState<TunePackage[]>([]);
   const [tuneId, setTuneId] = useState("stock");
   const [envId, setEnvId] = useState("standard");
@@ -296,6 +297,7 @@ export default function SimPage() {
 
       <main className="grid grid-cols-12 gap-5">
         <section className="col-span-12 space-y-4 xl:col-span-7">
+          {CAR_MODELS[engineId] && <SketchfabCar model={CAR_MODELS[engineId]} />}
           <div className="panel p-4">
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <h2 className="mr-2 text-sm font-medium text-ink">Drive</h2>
