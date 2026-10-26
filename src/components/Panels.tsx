@@ -80,6 +80,7 @@ export function DtcPanel({ dtcs }: { dtcs: { stored: string[]; pending: string[]
 /* ---------- Agent timeline ---------- */
 
 export type TimelineItem =
+  | { id: number; kind: "user"; text: string }
   | { id: number; kind: "thinking"; text: string }
   | { id: number; kind: "text"; text: string }
   | { id: number; kind: "tool"; toolId: string; name: string; input: Record<string, unknown>; result?: unknown; isError?: boolean; ms?: number }
@@ -131,6 +132,11 @@ function resultLine(name: string, r: unknown): string | null {
   return null;
 }
 
+/** The model writes light markdown in chat answers; render **bold** and leave the rest as text. */
+function renderBold(text: string) {
+  return text.split(/(\*\*[^*\n]+\*\*)/g).map((part, i) => (part.startsWith("**") && part.endsWith("**") && part.length > 4 ? <strong key={i}>{part.slice(2, -2)}</strong> : part));
+}
+
 export function Timeline({ items, running }: { items: TimelineItem[]; running: boolean }) {
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -139,6 +145,12 @@ export function Timeline({ items, running }: { items: TimelineItem[]; running: b
   return (
     <div className="space-y-2">
       {items.map((it) => {
+        if (it.kind === "user")
+          return (
+            <div key={it.id} className="flex justify-end pt-2">
+              <div className="max-w-[85%] rounded-2xl rounded-br-md bg-accent px-3.5 py-2 text-sm whitespace-pre-wrap text-white">{it.text}</div>
+            </div>
+          );
         if (it.kind === "thinking")
           return (
             <div key={it.id} className="border-l-2 border-line pl-3 text-xs leading-relaxed whitespace-pre-wrap text-muted italic">
@@ -148,7 +160,7 @@ export function Timeline({ items, running }: { items: TimelineItem[]; running: b
         if (it.kind === "text")
           return (
             <div key={it.id} className="text-sm leading-relaxed whitespace-pre-wrap text-ink">
-              {it.text}
+              {renderBold(it.text)}
             </div>
           );
         if (it.kind === "error")

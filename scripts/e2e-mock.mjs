@@ -34,12 +34,12 @@ await page.route("**/api/agent", async (route) => {
   ];
   await route.fulfill({ status: 200, contentType: "application/x-ndjson", body: lines.map((l) => JSON.stringify(l)).join("\n") + "\n" });
 });
-await page.goto("http://localhost:" + (process.env.PORT ?? "3100") + "");
+await page.goto("http://localhost:" + (process.env.PORT ?? "3100") + "/technician");
 await page.selectOption("select", "vacuum_leak");
 await page.click("text=Connect");
 await page.waitForSelector("text=Disconnect", { timeout: 20000 });
 await page.waitForTimeout(2500);
-await page.click("button:has-text('Diagnose')");
+await page.click("button:has-text('Run full diagnosis')");
 try { await page.waitForSelector("text=Mock summary.", { timeout: 40000 }); } catch { console.log("TIMEOUT"); }
 await page.waitForTimeout(500);
 await page.screenshot({ path: process.argv[2] ?? "e2e.png" });

@@ -3,7 +3,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const TABS = [
-  { href: "/", label: "Diagnostics" },
+  { href: "/diagnostics", label: "Diagnostics" },
+  { href: "/technician", label: "AI Technician" },
   { href: "/tune", label: "Tuning" },
   { href: "/sim", label: "Simulator" },
 ];
@@ -18,7 +19,7 @@ export function AppNav() {
         </Link>
         <div className="flex gap-1 text-sm">
           {TABS.map((t) => {
-            const active = t.href === "/" ? path === "/" : path.startsWith(t.href);
+            const active = path.startsWith(t.href);
             return (
               <Link
                 key={t.href}

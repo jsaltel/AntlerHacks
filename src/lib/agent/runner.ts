@@ -22,13 +22,20 @@ const MAX_STEPS = 40;
  * next to the OBD adapter.
  */
 export async function runAgent(complaint: string, ctx: ExecContext, emit: (e: AgentEvent) => void): Promise<void> {
-  const messages: Msg[] = [
-    {
-      role: "user",
-      content: `Diagnose this vehicle. Owner's complaint: "${complaint || "No specific complaint; run a full health check."}"`,
-    },
-  ];
+  const messages: Msg[] = [{ role: "user", content: diagnoseRequest(complaint) }];
+  return runConversation(messages, ctx, emit);
+}
 
+export function diagnoseRequest(complaint: string) {
+  return `Diagnose this vehicle. Owner's complaint: "${complaint || "No specific complaint; run a full health check."}"`;
+}
+
+/**
+ * Runs the model on an ongoing chat transcript until it stops calling tools.
+ * The transcript is appended in place, so the next user message continues
+ * the same conversation.
+ */
+export async function runConversation(messages: Msg[], ctx: ExecContext, emit: (e: AgentEvent) => void): Promise<void> {
   for (let step = 0; step < MAX_STEPS; step++) {
     emit({ type: "step_start", step });
     const res = await fetch("/api/agent", {

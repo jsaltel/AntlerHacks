@@ -54,7 +54,9 @@ Browser (Chrome/Edge)                               Next.js server
 
 ## Pages
 
-* **Diagnostics** (`/`): the AI technician above. The report now includes, for each root cause, step-by-step repair instructions, a parts list with prices, tools and labor hours.
+* **Home** (`/`): a get-started guide: get an adapter, plug it in, connect it to the laptop, press Connect, ask the technician. It also has a one-click simulator demo.
+* **Diagnostics** (`/diagnostics`): connection, live gauges and charts, trouble codes and the wire log.
+* **AI Technician** (`/technician`): a chat with the AI technician above. Type questions or problems (it works without a car, too), or run a full diagnosis. Both tabs share one adapter connection, so a diagnosis keeps running when you switch tabs. The report includes, for each root cause, step-by-step repair instructions, a parts list with prices, tools and labor hours.
 * **Tuning** (`/tune`): pick the car and fuel, describe the goal, and a team of four Claude agents develops an ECU calibration on the simulated engine:
   * **Lead tuner** scans the engine, dynos stock in several conditions and writes a plan with hard safety limits.
   * **Calibration engineer** edits the spark, AFR and boost maps and rev limit, measuring each change on the dyno.
@@ -69,7 +71,7 @@ Browser (Chrome/Edge)                               Next.js server
 ```bash
 npm install
 cp .env.example .env.local   # add your ANTHROPIC_API_KEY
-npm run dev                  # http://localhost:3000 in Chrome or Edge
+npm run dev                  # http://localhost:3000 in Chrome or Edge (get-started page)
 ```
 
 * **Simulator:** choose a scenario, or "Mystery car" for a random fault that is revealed after the diagnosis. Then Connect, and Diagnose.

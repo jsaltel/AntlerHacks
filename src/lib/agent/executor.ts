@@ -13,7 +13,8 @@ export interface MonitorSample {
 }
 
 export interface ExecContext {
-  elm: Elm327;
+  /** Absent when chatting without a car connected; only knowledge-base tools work then. */
+  elm?: Elm327;
   /** Present in simulator mode: driver actions are applied to the vehicle model. */
   vehicle?: VehicleModel;
   requestDriverAction(action: DriveMode, instruction: string): Promise<boolean>;
@@ -63,8 +64,12 @@ const sleep = (ms: number, signal: AbortSignal) =>
   });
 
 /** Runs one validated tool call against the live adapter. Returns JSON-serializable output. */
+const OFFLINE_TOOLS: ToolName[] = ["lookup_dtc", "submit_diagnosis"];
+
 export async function executeTool(name: ToolName, input: unknown, ctx: ExecContext): Promise<unknown> {
-  const { elm } = ctx;
+  if (!ctx.elm && !OFFLINE_TOOLS.includes(name))
+    throw new Error("No vehicle is connected. Answer from your knowledge (lookup_dtc still works) or ask the person to connect the adapter or start the simulator.");
+  const elm = ctx.elm!;
   switch (name) {
     case "get_vehicle_info": {
       const vin = await elm.readVin();
