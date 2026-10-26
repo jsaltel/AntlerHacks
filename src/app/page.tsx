@@ -210,14 +210,10 @@ export default function Home() {
   const isSim = vehicle?.transport.startsWith("Simulator");
 
   return (
-    <div className="mx-auto min-h-screen max-w-[1600px] px-6 py-5">
+    <div className="mx-auto max-w-[1600px] px-6 py-5">
       {/* Header + connection */}
       <header className="mb-5 flex flex-wrap items-center gap-4">
-        <div className="mr-4">
-          <h1 className="text-lg font-semibold tracking-tight text-ink">
-            Torque <span className="font-normal text-muted">· AI diagnostic technician</span>
-          </h1>
-        </div>
+        <h1 className="mr-2 text-sm font-medium text-ink-2">AI diagnostic technician</h1>
         <div className="flex rounded-lg border border-line bg-surface-1 p-0.5 text-sm" role="tablist">
           {(
             [

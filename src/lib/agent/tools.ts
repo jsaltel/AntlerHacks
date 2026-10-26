@@ -41,6 +41,13 @@ export const ToolInputs = {
           fix: z.string(),
           diy_difficulty: z.enum(["easy", "moderate", "hard", "shop"]),
           est_cost_usd: z.tuple([z.number(), z.number()]),
+          repair_steps: z.array(z.string()).max(15).optional(),
+          parts: z
+            .array(z.object({ name: z.string(), part_number: z.string().optional(), qty: z.number().min(1), est_price_usd: z.number().min(0) }))
+            .max(12)
+            .optional(),
+          tools_needed: z.array(z.string()).max(12).optional(),
+          labor_hours: z.number().min(0).max(40).optional(),
         }),
       )
       .min(1)
@@ -138,8 +145,25 @@ const defs: { name: ToolName; description: string; input_schema: Anthropic.Tool.
               fix: { type: "string" },
               diy_difficulty: { type: "string", enum: ["easy", "moderate", "hard", "shop"] },
               est_cost_usd: { type: "array", items: { type: "number" }, description: "[low, high]" },
+              repair_steps: { type: "array", items: { type: "string" }, description: "Ordered, specific repair procedure a competent DIYer could follow, including verification after the repair" },
+              parts: {
+                type: "array",
+                description: "Parts to buy. Use generic part names; give a part_number only if you are confident it is typical for this kind of vehicle, otherwise omit it.",
+                items: {
+                  type: "object",
+                  properties: {
+                    name: { type: "string" },
+                    part_number: { type: "string" },
+                    qty: { type: "number" },
+                    est_price_usd: { type: "number", description: "Typical aftermarket price per unit" },
+                  },
+                  required: ["name", "qty", "est_price_usd"],
+                },
+              },
+              tools_needed: { type: "array", items: { type: "string" } },
+              labor_hours: { type: "number", description: "Typical shop labor time" },
             },
-            required: ["cause", "confidence", "evidence", "fix", "diy_difficulty", "est_cost_usd"],
+            required: ["cause", "confidence", "evidence", "fix", "diy_difficulty", "est_cost_usd", "repair_steps", "parts", "tools_needed", "labor_hours"],
           },
         },
         ruled_out: {
@@ -163,7 +187,7 @@ How to work:
 3. Baseline: monitor the relevant PIDs at warm idle.
 4. Design and run at least one discriminating test with request_driver_action + monitor_pids (for example trims at idle vs 2500 rpm, upstream vs downstream O2 switching at 2500 rpm, coolant behaviour over time, rpm stability). Return the engine to idle afterwards.
 5. Reason over the numbers. Explicitly rule causes in or out with measured values.
-6. Call submit_diagnosis once with ranked root causes, evidence (cite numbers), ruled-out causes, cost estimates and next steps.
+6. Call submit_diagnosis once with ranked root causes, evidence (cite numbers), ruled-out causes, cost estimates and next steps. For each root cause write the report a master mechanic would hand over: ordered repair steps (including how to verify the fix with the scanner afterwards), the parts list with quantities and typical prices, the tools needed and typical labor hours.
 
 Rules:
 - Keep each message between tool calls to one or two short sentences explaining what you are checking and why; the person watches your progress live.

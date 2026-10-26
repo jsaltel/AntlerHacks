@@ -230,7 +230,54 @@ export function DiagnosisReport({ d }: { d: Diagnosis }) {
             </div>
             <div className="tabular mt-1 text-xs text-muted">
               {rc.diy_difficulty === "shop" ? "Shop job" : `DIY: ${rc.diy_difficulty}`} · ${rc.est_cost_usd[0]}–${rc.est_cost_usd[1]}
+              {rc.labor_hours !== undefined && ` · ${rc.labor_hours} h labor`}
             </div>
+            {(rc.repair_steps?.length || rc.parts?.length || rc.tools_needed?.length) && (
+              <details className="mt-2" open={i === 0}>
+                <summary className="cursor-pointer text-xs text-accent">Repair plan</summary>
+                {rc.repair_steps && rc.repair_steps.length > 0 && (
+                  <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-ink-2">
+                    {rc.repair_steps.map((s, j) => (
+                      <li key={j}>{s}</li>
+                    ))}
+                  </ol>
+                )}
+                {rc.parts && rc.parts.length > 0 && (
+                  <table className="tabular mt-3 w-full text-xs">
+                    <thead>
+                      <tr className="text-left text-muted">
+                        <th className="pb-1 font-normal">Part</th>
+                        <th className="pb-1 text-right font-normal">Qty</th>
+                        <th className="pb-1 text-right font-normal">Each</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rc.parts.map((p, j) => (
+                        <tr key={j} className="border-t border-line text-ink-2">
+                          <td className="py-1">
+                            {p.name}
+                            {p.part_number && <span className="ml-1 font-mono text-muted">{p.part_number}</span>}
+                          </td>
+                          <td className="py-1 text-right">{p.qty}</td>
+                          <td className="py-1 text-right">${p.est_price_usd}</td>
+                        </tr>
+                      ))}
+                      <tr className="border-t border-line text-ink">
+                        <td className="py-1">Parts total</td>
+                        <td />
+                        <td className="py-1 text-right">${rc.parts.reduce((a, p) => a + p.qty * p.est_price_usd, 0).toFixed(0)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                )}
+                {rc.tools_needed && rc.tools_needed.length > 0 && (
+                  <div className="mt-2 text-xs text-ink-2">
+                    <span className="text-muted">Tools: </span>
+                    {rc.tools_needed.join(", ")}
+                  </div>
+                )}
+              </details>
+            )}
           </li>
         ))}
       </ol>
