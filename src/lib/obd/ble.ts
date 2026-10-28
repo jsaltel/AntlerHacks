@@ -25,11 +25,15 @@ export class BleTransport implements ObdTransport {
   }
 
   async open() {
-    if (!navigator.bluetooth) throw new Error("Web Bluetooth is not available. Use Chrome on desktop.");
-    this.device = await navigator.bluetooth.requestDevice({
-      acceptAllDevices: true,
-      optionalServices: KNOWN_SERVICES,
-    });
+    if (!navigator.bluetooth) throw new Error("Web Bluetooth is not available. Use Chrome or Edge on desktop.");
+    try {
+      this.device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: KNOWN_SERVICES,
+      });
+    } catch (e) {
+      throw new Error(explainBleError(e));
+    }
     const server = await this.device.gatt!.connect();
     const services = await server.getPrimaryServices();
     let rx: BluetoothRemoteGATTCharacteristic | null = null;
@@ -68,4 +72,14 @@ export class BleTransport implements ObdTransport {
     this.device = null;
     this.tx = null;
   }
+}
+
+function explainBleError(e: unknown): string {
+  const msg = e instanceof DOMException || e instanceof Error ? e.message : String(e);
+  const name = e instanceof DOMException ? e.name : "";
+  if (name === "NotFoundError" && /cancelled|canceled/i.test(msg)) return msg;
+  if (/globally disabled|permission has been blocked|User or their enterprise policy/i.test(msg)) {
+    return "Web Bluetooth is turned off in this browser. Open the app in Chrome or Edge (not Brave, Safari, Firefox, or the Cursor preview). In Brave: brave://flags → enable “Web Bluetooth API” and relaunch. In Chrome: chrome://settings/content/bluetoothDevices → Allow, then use http://localhost (HTTPS or localhost only).";
+  }
+  return msg || "Bluetooth connection failed";
 }
