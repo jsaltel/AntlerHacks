@@ -8,7 +8,10 @@ const STEPS: { title: string; body: React.ReactNode }[] = [
     title: "Get an OBD-II adapter",
     body: (
       <>
-        Any ELM327-compatible adapter works: a USB cable adapter or a Bluetooth LE one (for example OBDLink EX or CX). They cost about $20–80. Classic Bluetooth adapters that pair in system settings are not supported by browsers; use USB or Bluetooth LE.
+        Any ELM327-compatible adapter works: a USB cable adapter or a Bluetooth LE one (for example OBDLink EX or CX). They cost about $20–80. Classic Bluetooth adapters that pair in system settings are not supported by browsers; use USB or Bluetooth LE.{" "}
+        <Link href="/adapters" className="text-accent hover:underline">
+          Compatible adapters
+        </Link>
       </>
     ),
   },

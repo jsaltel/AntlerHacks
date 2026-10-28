@@ -7,6 +7,7 @@ const TABS = [
   { href: "/technician", label: "AI Technician" },
   { href: "/tune", label: "Tuning" },
   { href: "/sim", label: "Simulator" },
+  { href: "/adapters", label: "Adapters" },
 ];
 
 export function AppNav() {
