@@ -10,7 +10,7 @@ Built for the AITX & MLOps World Community Hackathon, **Antler agents track**.
 
 A P0171 "system too lean" code has at least five common causes, from a $5 vacuum hose to a $400 fuel pump. A code reader stops at the code. Torque's agent:
 
-1. Reads stored, pending and permanent codes, plus the freeze-frame data, VIN and battery voltage.
+1. Reads stored, pending and permanent codes, plus the freeze-frame data, VIN and battery voltage. The VIN is decoded to the exact year, make, model and engine, and the car appears as a live 3D model.
 2. Pulls ranked causes and the *discriminating tests* for each cause from a local repair knowledge base.
 3. Designs an experiment and asks the driver to change engine state (idle, 2500 rpm, cruise, snap throttle).
 4. Samples live PIDs during each condition and computes statistics: mean, spread, trend, and O2 sensor switching frequency.
@@ -54,7 +54,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 # ANTHROPIC_MODEL=claude-opus-5-5
 ```
 
-No other keys or accounts are needed. The 3D car models load from Sketchfab's public embed API without a key.
+No other keys or accounts are needed. VIN decoding uses NHTSA's free vPIC API (no key) and falls back to an offline decoder, and the Sketchfab cars on the Simulator page load from Sketchfab's public embed API without a key.
 
 ### Demo script (simulator, about 3 minutes)
 
@@ -89,7 +89,8 @@ node scripts/e2e-mock.mjs out.png
 * **AI:** Claude via `@anthropic-ai/sdk`, using tool use, adaptive thinking with streamed summaries, effort control, prompt caching and server-side fallback. Tool inputs are validated with zod.
 * **Hardware:** a hand-written ELM327 driver over Web Serial (USB) and Web Bluetooth (BLE), with SAE J1979 modes 01/02/03/04/07/09/0A and ISO-TP multi-frame reassembly.
 * **Simulation:** an ELM327 v1.5 emulator with a fault-injected engine model, and a mean-value engine and vehicle model for tuning and driving.
-* **Charts and 3D:** custom SVG charts; Sketchfab Viewer API for the embedded 3D cars.
+* **Charts and 3D:** custom SVG charts; three.js for the live vehicle view (generated low-poly bodies plus a Draco-compressed glTF model); Sketchfab Viewer API for the Simulator page's cars.
+* **Vehicle data:** NHTSA vPIC VIN decoding through `/api/vin/:vin`, with an offline fallback.
 * **Storage:** none server-side. Saved tunes live in the browser's `localStorage`.
 
 ## Architecture
@@ -131,7 +132,7 @@ flowchart LR
 
 | Tool | What it does |
 |---|---|
-| `get_vehicle_info` | VIN (mode 09), adapter version, protocol, battery voltage, supported PIDs |
+| `get_vehicle_info` | VIN (mode 09) and its decode (year, make, model, engine, body), adapter version, protocol, battery voltage, supported PIDs |
 | `read_dtcs` | Stored, pending and permanent codes (modes 03/07/0A) |
 | `read_freeze_frame` | Snapshot taken when the code set (mode 02) |
 | `read_live_data` | One reading of up to 12 PIDs (mode 01) |
@@ -158,6 +159,8 @@ The tuning lab is a second multi-agent system: a lead tuner, a calibration engin
 | `src/lib/sim/engine.ts` | Engine + vehicle physics: VE, turbo spool, intake heat, injectors, spark vs knock limit, EGT, dyno, drag strip |
 | `src/lib/tune/team.ts`, `workbench.ts`, `pipeline.ts` | Tuning agents, tool execution with the QA safety gate, and the multi-round loop |
 | `src/components/DiagnosticsProvider.tsx` | Shared adapter connection and agent state across pages |
+| `src/app/api/vin/[vin]/route.ts`, `src/lib/vehicle/` | VIN decoding: NHTSA vPIC with a cached result, offline fallback (check digit, model year, manufacturer, known models) |
+| `src/components/VehicleView.tsx` | Live 3D view of the connected car: body shape from the VIN decode, wheels turn with speed, the body shakes with engine roughness (RPM spread), CHECK ENGINE badge |
 | `src/components/SketchfabCar.tsx` | Embedded Sketchfab 3D cars: camera views and paint via the Viewer API |
 
 ### Pages
@@ -175,8 +178,10 @@ The project uses **no external training data and no personal or vehicle data fro
 | Data | Location | What it is | Provenance |
 |---|---|---|---|
 | DTC repair knowledge base | `src/lib/kb/dtcs.ts` | 24 OBD-II codes (P0101, P0128, P0133, P0135, P0171, P0172, P0174, P0217, P0300–P0308, P0401, P0420, P0430, P0442, P0455, P0505, P0562, P0700). Each has a title, system, severity, ranked causes, *discriminating tests* (how live data separates the causes) and a USD cost range. | Hand-written for this project from general automotive repair knowledge: SAE J2012 code definitions and widely published service practice (fuel-trim, O2 and thermostat diagnostics). Cost ranges are rough US parts-plus-labor estimates, not quotes. Unknown codes fall back to the SAE J2012 code family (for example "Ignition system or misfire") and a manufacturer-specific flag. |
-| Simulator fault scenarios | `src/lib/obd/simulator.ts` | 6 scenarios: vacuum leak (P0171/P0174), dirty MAF (P0171/P0174 + pending P0101), cylinder 3 misfire (P0303/P0300), catalyst efficiency (P0420), thermostat stuck open (P0128), healthy. Each has stored and pending codes, a freeze frame, and fault-specific behavior for RPM, fuel trims, MAF, O2 sensors and coolant. "Mystery car" picks one of the five faults at random. | Synthetic. Values are generated live by a hand-built engine model whose behavior follows the textbook failure signatures in the knowledge base (for example, vacuum-leak trims fall as airflow rises; a dirty MAF under-reads by about 28%). Freeze frames are hand-authored to match. Random noise is added to every reading. The simulator VIN `1HGCM82633A004352` is the public sample VIN used in NHTSA documentation, not a real customer's car. |
+| Simulator fault scenarios | `src/lib/obd/simulator.ts` | 6 scenarios: vacuum leak (P0171/P0174), dirty MAF (P0171/P0174 + pending P0101), cylinder 3 misfire (P0303/P0300), catalyst efficiency (P0420), thermostat stuck open (P0128), healthy. Each has stored and pending codes, a freeze frame, and fault-specific behavior for RPM, fuel trims, MAF, O2 sensors and coolant. "Mystery car" picks one of the five faults at random. | Synthetic. Values are generated live by a hand-built engine model whose behavior follows the textbook failure signatures in the knowledge base (for example, vacuum-leak trims fall as airflow rises; a dirty MAF under-reads by about 28%). Freeze frames are hand-authored to match. Random noise is added to every reading. Each scenario is a different car (2013 F-150, 2014 Silverado, 2016 Civic, 2012 Camry, 2015 Outback, 2003 Accord) with a VIN in valid format, so VIN decoding and the 3D view have something real to show. The VINs are made up to match each model's pattern (the Accord's is the public sample VIN from NHTSA documentation) and don't belong to real customers' cars, and MAF readings scale with each car's engine size. |
 | Engine and vehicle presets | `src/lib/sim/engine.ts` | 5 cars with displacement, compression, redline, boost, injector size, mass, gearing, drag and drivetrain data, and 5 test environments (standard, hot day, 87 octane, 1600 m altitude, track heat soak). | Approximated from publicly available manufacturer specifications and enthusiast references. A per-engine calibration factor is tuned so stock dyno output lands near the factory rating; run `scripts/engine-check.ts` to see the results. Internals and turbo limits are estimates. |
+| Porsche 911 GT3 RS model | `public/models/porsche-911-gt3-rs.glb` | The showroom car in the Vehicle panel, also used for Porsche VINs. Every other car is a generated low-poly body. | "Porsche 911 GT3 RS" by BlackSnow02 on Sketchfab, CC Attribution 4.0, via the copy in `gioeledallapozza/porsche-gt3rs-configurator` on GitHub. Unmodified. See `public/models/CREDITS.md`. Porsche is a trademark of Dr. Ing. h.c. F. Porsche AG; this project is not affiliated with Porsche. |
+| VIN decodes | NHTSA vPIC (live) and `src/lib/vehicle/vin.ts` (offline) | Year, make, model, trim, engine, body class and plant for a VIN. | Public US government data from NHTSA's vPIC API. The offline fallback uses the public VIN standard (check digit, model-year codes) and a hand-written table of manufacturer codes. |
 | 3D car models | Embedded at runtime from Sketchfab | Alfa Romeo Giulia Quadrifoglio by MaximePages; Jeep Wrangler Rubicon JK (2017) by ROH3D. | The creators' work, streamed through the Sketchfab Viewer API. They are embedded, not copied into this repo. |
 | Agent transcripts and tunes | Browser memory and `localStorage` | Conversations, diagnoses and saved tunes. | Generated by the user's session. Nothing is stored server-side; transcripts are sent to the Anthropic API for each step. |
 
@@ -195,7 +200,8 @@ The project uses **no external training data and no personal or vehicle data fro
 
 ## Next steps
 
-* Decode the VIN (NHTSA vPIC) to tailor causes and costs to the exact make, model and engine, and pull open recalls and TSBs.
+* Use the decoded vehicle to pull open recalls and TSBs, and tailor causes and costs to the exact engine.
+* More real 3D models per make and model in place of the generated bodies.
 * Add manufacturer-specific PIDs (mode 22) and more modules (transmission, ABS, BMS for EVs and hybrids).
 * Grow the knowledge base from service data, and evaluate the agent against a labeled set of simulator and real-car cases (accuracy of top-1 root cause, tests run, cost per diagnosis).
 * Multi-fault and intermittent-fault simulator scenarios, plus recorded real-car sessions replayed through the same driver.

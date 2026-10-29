@@ -4,6 +4,7 @@ import { PID_BY_KEY } from "../obd/pids";
 import { lookupDtc } from "../kb/dtcs";
 import type { ToolInputs, ToolName } from "./tools";
 import type { z } from "zod";
+import type { DecodedVehicle } from "../vehicle/vin";
 
 export type Diagnosis = z.infer<(typeof ToolInputs)["submit_diagnosis"]>;
 
@@ -17,6 +18,8 @@ export interface ExecContext {
   elm?: Elm327;
   /** Present in simulator mode: driver actions are applied to the vehicle model. */
   vehicle?: VehicleModel;
+  /** VIN decode (make, model, engine) from /api/vin, if available. */
+  decodedVehicle?: DecodedVehicle | null;
   requestDriverAction(action: DriveMode, instruction: string): Promise<boolean>;
   confirmClear(reason: string): Promise<boolean>;
   onMonitorStart(label: string, pids: string[], durationS: number): void;
@@ -73,8 +76,10 @@ export async function executeTool(name: ToolName, input: unknown, ctx: ExecConte
   switch (name) {
     case "get_vehicle_info": {
       const vin = await elm.readVin();
+      const d = ctx.decodedVehicle;
       return {
         vin,
+        vehicle: d ? { year: d.year, make: d.make, model: d.model, trim: d.trim, engine: d.engine, body: d.bodyClass, decode_source: d.source } : null,
         adapter: elm.info?.version,
         protocol: elm.info?.protocol,
         battery_voltage: elm.info?.batteryVoltage,

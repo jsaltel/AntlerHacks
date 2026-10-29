@@ -3,6 +3,7 @@ import { SCENARIOS } from "@/lib/obd/simulator";
 import { ConnectionBar } from "@/components/ConnectionBar";
 import { useDiagnostics } from "@/components/DiagnosticsProvider";
 import { DiagnosisReport, DtcPanel, Gauges, Timeline } from "@/components/Panels";
+import { ConnectedVehicleView } from "@/components/VehicleView";
 
 const SUGGESTIONS = ["What do my trouble codes mean?", "Is my car safe to drive right now?", "My engine idles rough when cold. What could it be?", "What does P0420 mean and how much does it cost to fix?"];
 
@@ -104,6 +105,7 @@ export default function Technician() {
         </section>
 
         <section className="col-span-12 space-y-4 lg:col-span-5">
+          <ConnectedVehicleView />
           <Gauges values={live} />
           {diagnosis && <DiagnosisReport d={diagnosis} />}
           {diagnosis && isSim && actualScenario && scenario === "mystery" && (

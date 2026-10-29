@@ -10,6 +10,8 @@ import type { WireLogEntry } from "@/lib/obd/transport";
 import type Anthropic from "@anthropic-ai/sdk";
 import { diagnoseRequest, runConversation, type AgentEvent } from "@/lib/agent/runner";
 import type { Diagnosis, MonitorSample } from "@/lib/agent/executor";
+import { fetchVehicle } from "@/lib/vehicle/client";
+import type { DecodedVehicle } from "@/lib/vehicle/vin";
 import { ConfirmClearModal, DriverActionModal, type TimelineItem } from "@/components/Panels";
 
 export type Status = "disconnected" | "connecting" | "connected";
@@ -33,6 +35,7 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
   const [status, setStatus] = useState<Status>("disconnected");
   const [connError, setConnError] = useState<string | null>(null);
   const [vehicle, setVehicle] = useState<{ vin: string | null; protocol: string; adapter: string; transport: string } | null>(null);
+  const [decoded, setDecoded] = useState<DecodedVehicle | null>(null);
   const [live, setLive] = useState<Record<string, number | null>>({});
   const [history, setHistory] = useState<MonitorSample[]>([]);
   const [dtcs, setDtcs] = useState<Dtcs | null>(null);
@@ -53,6 +56,7 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
   const pollPaused = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const idRef = useRef(0);
+  const decodedRef = useRef<DecodedVehicle | null>(null);
   const messagesRef = useRef<Anthropic.Beta.BetaMessageParam[]>([]);
 
   useEffect(() => {
@@ -102,6 +106,7 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
     historyRef.current = [];
     setHistory([]);
     setDtcs(null);
+    setDecoded(null);
     // Keep the chat so questions asked before connecting carry over; the old report belonged to the previous car.
     setDiagnosis(null);
     const chosen: ScenarioId = scenario === "mystery" ? SCENARIOS[Math.floor(Math.random() * (SCENARIOS.length - 1))].id : scenario;
@@ -112,6 +117,9 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
       elmRef.current = elm;
       const vin = await elm.readVin();
       setVehicle({ vin, protocol: elm.info!.protocol, adapter: elm.info!.version, transport: elm.transport.label });
+      const d = vin ? await fetchVehicle(vin) : null;
+      decodedRef.current = d;
+      setDecoded(d);
       setDtcs(await elm.readDtcs());
       setStatus("connected");
     } catch (e) {
@@ -184,6 +192,7 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
         {
           elm,
           vehicle: sim,
+          decodedVehicle: decodedRef.current,
           signal: ac.signal,
           requestDriverAction: (action, instruction) => new Promise((resolve) => setDriverPrompt({ action, instruction, resolve })),
           confirmClear: (reason) => new Promise((resolve) => setClearPrompt({ reason, resolve })),
@@ -216,7 +225,7 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
     }
   };
 
-  const run = () => send(diagnoseRequest(complaint), `Run a full diagnosis${complaint ? `: ${complaint}` : ""}`);
+  const run = () => send(diagnoseRequest(complaint, decodedRef.current), `Run a full diagnosis${complaint ? `: ${complaint}` : ""}`);
 
   const newChat = () => {
     abortRef.current?.abort();
@@ -231,7 +240,7 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
   const isSim = vehicle?.transport.startsWith("Simulator");
 
   const value = {
-    mode, setMode, scenario, setScenario, actualScenario, status, connError, vehicle, live, history, dtcs, wire,
+    mode, setMode, scenario, setScenario, actualScenario, status, connError, vehicle, decoded, live, history, dtcs, wire,
     complaint, setComplaint, running, items, diagnosis, usage, testLabel, support, cost, connected, isSim: !!isSim,
     connect, disconnect, run, send, newChat, stop: () => abortRef.current?.abort(),
   };
@@ -272,6 +281,8 @@ type DiagnosticsState = {
   status: Status;
   connError: string | null;
   vehicle: { vin: string | null; protocol: string; adapter: string; transport: string } | null;
+  /** Make, model and engine decoded from the VIN (NHTSA vPIC, offline fallback). */
+  decoded: DecodedVehicle | null;
   live: Record<string, number | null>;
   history: MonitorSample[];
   dtcs: Dtcs | null;
