@@ -7,7 +7,7 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { describeVehicle, type DecodedVehicle } from "@/lib/vehicle/vin";
 import type { MonitorSample } from "@/lib/agent/executor";
 import { useDiagnostics } from "./DiagnosticsProvider";
-import { faultZones, ZONE_LABELS, type Zone, type ZoneFault } from "@/lib/vehicle/zones";
+import { faultParts, type PartFault, type PartId, type Zone } from "@/lib/vehicle/zones";
 import { lookupDtc } from "@/lib/kb/dtcs";
 
 type Body = "sedan" | "coupe" | "pickup" | "suv" | "hatchback";
@@ -42,6 +42,13 @@ function bodyFor(d: DecodedVehicle | null): Body {
   if (bc.includes("hatchback")) return "hatchback";
   if (bc.includes("coupe") || bc.includes("convertible")) return "coupe";
   return "sedan";
+}
+
+/** Cylinder count from the decoded engine ("2.0L I4", "5.3L V8"); 4 when unknown. */
+function cylindersFor(d: DecodedVehicle | null): number {
+  const m = /\b[IVHW](\d{1,2})\b/i.exec(d?.engine ?? "");
+  const n = m ? Number(m[1]) : 4;
+  return n >= 2 && n <= 12 ? n : 4;
 }
 
 /** Same VIN, same paint. */
@@ -90,13 +97,16 @@ interface Props {
  * 3D view of the connected car. Builds a stylized low-poly body (sedan, coupe,
  * pickup, SUV or hatchback, from the VIN decode's body class) and animates it
  * from live data: the wheels turn with road speed and the body shakes with
- * engine roughness, so a misfire is visible at idle. Porsches, and the
- * showroom view before anything is connected, use a real GT3 RS model.
+ * engine roughness, so a misfire is visible at idle. The generated cars
+ * carry the main components inside (engine and cylinders, intake, cooling,
+ * exhaust, fuel system, battery, ECU), and trouble codes light up the part
+ * they point at under an x-ray body. Porsches, and the showroom view before
+ * anything is connected, use a real GT3 RS model.
  */
 export function VehicleView({ decoded, vin, connected, live, history, checkEngine, dtcs }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const liveRef = useRef({ speed: 0, rpm: 0, roughness: 0 });
-  const stageRef = useRef<{ show: (d: DecodedVehicle | null, vin: string | null) => void; setFaults: (f: ZoneFault[]) => void } | null>(null);
+  const stageRef = useRef<{ show: (d: DecodedVehicle | null, vin: string | null) => void; setFaults: (f: PartFault[], xray: boolean) => void } | null>(null);
   const [loading, setLoading] = useState(false);
 
   liveRef.current = connected
@@ -120,8 +130,12 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
     scene.environmentIntensity = 0.6;
 
     const camera = new THREE.PerspectiveCamera(28, 1, 0.1, 60);
-    camera.position.set(0, 2.1, 8.6);
-    camera.lookAt(0, 0.62, 0);
+    // Two framings: the whole car, and closer in for x-ray so the components read.
+    const FAR = { eye: new THREE.Vector3(0, 2.1, 8.6), at: new THREE.Vector3(0, 0.62, 0) };
+    const NEAR = { eye: new THREE.Vector3(0, 2.5, 6.4), at: new THREE.Vector3(0, 0.45, 0) };
+    const lookAt = FAR.at.clone();
+    camera.position.copy(FAR.eye);
+    camera.lookAt(lookAt);
 
     scene.add(new THREE.HemisphereLight(0xdfe6f0, 0x202020, 0.6));
     const key = new THREE.DirectionalLight(0xffffff, 2.2);
@@ -142,9 +156,15 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
     let wheels: THREE.Object3D[] = [];
     let wheelAngle = 0;
     let anchors: Anchors | null = null;
-    let faults: ZoneFault[] = [];
+    let faults: PartFault[] = [];
+    let xray = false;
     const markers = new THREE.Group();
     const halos: THREE.Mesh[] = [];
+    // Components inside the generated car, the body materials that go see-through
+    // in x-ray mode, and the component materials currently glowing.
+    let parts = new Map<string, THREE.Mesh[]>();
+    let shellMats: THREE.MeshStandardMaterial[] = [];
+    let glowing: THREE.MeshStandardMaterial[] = [];
     let yaw = -0.55;
     let dragYaw = 0;
     let idle = 0;
@@ -160,6 +180,9 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
       car.add(chassis);
       wheels = [];
       anchors = null;
+      parts = new Map();
+      shellMats = [];
+      glowing = [];
       car.scale.setScalar(1);
     };
 
@@ -177,6 +200,17 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
       parent.add(mesh);
       return mesh;
     };
+    /** A cylinder along the x, y or z axis. */
+    const rod = (parent: THREE.Object3D, pos: [number, number, number], radius: number, length: number, axis: "x" | "y" | "z", m: THREE.Material) => {
+      const g = new THREE.CylinderGeometry(radius, radius, length, 18);
+      if (axis === "x") g.rotateZ(Math.PI / 2);
+      if (axis === "z") g.rotateX(Math.PI / 2);
+      disposables.push(g);
+      const mesh = new THREE.Mesh(g, m);
+      mesh.position.set(...pos);
+      parent.add(mesh);
+      return mesh;
+    };
     const disc = (parent: THREE.Object3D, x: number, radius: number, width: number, m: THREE.Material) => {
       const g = new THREE.CylinderGeometry(radius, radius, width, 28);
       g.rotateZ(Math.PI / 2);
@@ -186,10 +220,11 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
       parent.add(mesh);
     };
 
-    const build = (body: Body, paintColor: string) => {
+    const build = (body: Body, paintColor: string, cylinders: number) => {
       const paint = mat(paintColor, 0.28, 0.35);
       const glass = mat("#141a22", 0.08, 0.2);
       const trim = mat("#151515", 0.7);
+      shellMats = [paint, glass, trim];
       const tire = mat("#111111", 0.85);
       const rimM = mat("#b9bcc2", 0.25, 0.8);
       const head = mat("#ffffff", 0.3, 0, "#fff3d6");
@@ -264,6 +299,60 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
           box(t, [s * wid * 0.5, wheelD * 0.62, z], [0.02, wheelD * 0.5, wheelD * 1.15], trim);
         }
 
+      // Components under the skin, so a code can light up the exact part it points at.
+      const part = (id: PartId, color: string, metal = 0.5) => {
+        const m = mat(color, 0.45, metal);
+        return (mesh: THREE.Mesh) => {
+          mesh.material = m;
+          parts.set(id, [...(parts.get(id) ?? []), mesh]);
+          return mesh;
+        };
+      };
+      const ez = len * 0.34;
+      const blockW = wid * 0.42;
+      const blockBottom = ride + bodyH * 0.2;
+      const blockTop = ride + bodyH * 0.68;
+      part("engine_block", "#8d929a")(box(t, [0, (blockBottom + blockTop) / 2, ez], [blockW, blockTop - blockBottom, 0.34], trim));
+      // Cylinders: one row across the bay for inline engines, two angled banks for V and flat engines.
+      const vee = cylinders >= 6;
+      const perRow = vee ? Math.ceil(cylinders / 2) : cylinders;
+      const pitch = blockW / perRow;
+      for (let i = 0; i < cylinders; i++) {
+        const row = vee ? i % 2 : 0;
+        const k = vee ? Math.floor(i / 2) : i;
+        const x = -blockW / 2 + pitch * (k + 0.5);
+        const c = part(`cyl${i + 1}`, "#c4c9d1", 0.7)(rod(t, [x, blockTop + 0.07, ez + (vee ? (row ? -0.1 : 0.1) : 0)], Math.min(0.06, pitch * 0.38), 0.14, "y", trim));
+        if (vee) c.rotation.x = row ? -0.4 : 0.4;
+      }
+      part("intake", "#6a6f78")(box(t, [0, blockTop + 0.17, ez - 0.2], [blockW * 0.9, 0.07, 0.12], trim));
+      part("throttle", "#7d828a")(rod(t, [-blockW * 0.55, blockTop + 0.17, ez - 0.2], 0.05, 0.08, "x", trim));
+      part("maf", "#2f6fb0")(rod(t, [-wid * 0.3, blockTop + 0.12, ez + 0.1], 0.05, 0.16, "z", trim));
+      box(t, [-wid * 0.3, blockTop + 0.08, ez + 0.32], [0.26, 0.16, 0.22], mat("#2a2a2a", 0.8)); // air box
+      part("egr", "#8a7a5a")(rod(t, [blockW * 0.3, blockTop + 0.17, ez - 0.2], 0.035, 0.1, "y", trim));
+      part("thermostat", "#b39b5c")(rod(t, [blockW * 0.35, blockTop - 0.02, ez + 0.2], 0.045, 0.08, "z", trim));
+      part("radiator", "#7a8088")(box(t, [0, ride + bodyH * 0.48, len * 0.452], [wid * 0.7, bodyH * 0.55, 0.05], trim));
+      part("battery", "#4a5058")(box(t, [wid * 0.32, ride + bodyH * 0.58, ez - 0.05], [0.26, 0.2, 0.18], trim));
+      part("ecu", "#3f7a50")(box(t, [-wid * 0.33, ride + bodyH * 0.62, ez - 0.22], [0.18, 0.05, 0.14], trim));
+      part("transmission", "#7d8288")(box(t, [0, ride + bodyH * 0.3, ez - 0.4], [0.36, 0.26, 0.42], trim));
+      // Exhaust: down-pipe, upstream O2, catalytic converter, downstream O2, muffler, tailpipe.
+      const ex = Math.max(0.12, ride * 0.55);
+      const exX = wid * 0.12;
+      const pipe = mat("#9a8a7a", 0.5, 0.6);
+      const catZ = len * 0.12;
+      const mufZ = -len * 0.36;
+      rod(t, [exX, (blockBottom + ex) / 2, ez - 0.18], 0.035, blockBottom - ex, "y", pipe);
+      rod(t, [exX, ex, (ez - 0.18 + catZ) / 2], 0.035, ez - 0.18 - catZ, "z", pipe);
+      rod(t, [exX, ex, (catZ + mufZ) / 2], 0.035, catZ - mufZ, "z", pipe);
+      rod(t, [exX, ex, (mufZ - len * 0.47) / 2], 0.03, mufZ + len * 0.47, "z", pipe);
+      part("o2_up", "#c8a24a", 0.7)(rod(t, [exX, ex + 0.07, ez - 0.34], 0.022, 0.12, "y", trim));
+      part("cat", "#9aa0a6", 0.8)(box(t, [exX, ex, catZ], [0.24, 0.16, 0.5], trim));
+      part("o2_down", "#c8a24a", 0.7)(rod(t, [exX, ex + 0.07, catZ - 0.36], 0.022, 0.12, "y", trim));
+      part("muffler", "#8e8a86", 0.6)(box(t, [exX, ex, mufZ], [0.42, 0.2, 0.55], trim));
+      // Fuel system.
+      part("fuel_tank", "#5a5d63", 0.2)(box(t, [-wid * 0.12, ride + 0.12, -len * 0.2], [wid * 0.55, 0.2, 0.55], trim));
+      part("evap", "#5d6b5d", 0.2)(rod(t, [wid * 0.3, ride + 0.16, -len * 0.29], 0.07, 0.2, "y", trim));
+      part("gas_cap", "#1c1c1c", 0.2)(rod(t, [wid * 0.505, ride + bodyH * 0.7, -len * 0.3], 0.07, 0.02, "x", trim));
+
       anchors = {
         engine: [0, ride + bodyH * 0.6, len * 0.34],
         intake: [-wid * 0.18, top - 0.02, len * 0.27],
@@ -321,7 +410,7 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
       clearCar();
       const url = modelUrlFor(d);
       if (!url) {
-        build(bodyFor(d), paintFor(v));
+        build(bodyFor(d), paintFor(v), cylindersFor(d));
         drawFaults();
         setLoading(false);
         return;
@@ -336,14 +425,16 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
         })
         .catch(() => {
           if (my !== token) return;
-          build("coupe", paintFor(v));
+          build("coupe", paintFor(v), 6);
           drawFaults();
         })
         .finally(() => my === token && setLoading(false));
     };
     /**
-     * A glowing marker per faulty area, drawn on top of the body so it reads
-     * like an x-ray: red for stored codes, amber for pending only.
+     * Lights up each faulty component (red for stored codes, amber for pending
+     * only) with a pulsing halo drawn on top of everything, and turns the body
+     * see-through so the parts inside show. Cars without modelled components
+     * (the imported GT3 RS) get a halo at the area instead.
      */
     const drawFaults = () => {
       for (const m of markers.children) {
@@ -353,24 +444,53 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
       }
       markers.clear();
       halos.length = 0;
+      for (const m of glowing) m.emissiveIntensity = 0;
+      glowing = [];
       car.add(markers);
-      if (!anchors) return;
+
+      for (const m of shellMats) {
+        m.transparent = xray;
+        m.opacity = xray ? (m === shellMats[1] ? 0.08 : 0.14) : 1;
+        m.depthWrite = !xray;
+        m.needsUpdate = true;
+      }
+
       for (const f of faults) {
-        const [x, y, z] = anchors[f.zone];
-        const color = f.stored ? STORED_COLOR : PENDING_COLOR;
-        const core = new THREE.Mesh(new THREE.SphereGeometry(0.11, 20, 14), new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95 }));
-        const halo = new THREE.Mesh(new THREE.SphereGeometry(0.3, 24, 16), new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.3, depthWrite: false }));
-        for (const m of [core, halo]) {
-          m.position.set(x, y, z);
-          m.renderOrder = 10;
-          markers.add(m);
+        const color = new THREE.Color(f.stored ? STORED_COLOR : PENDING_COLOR);
+        const ids = f.parts.flatMap((id) => (id === "cylinders" ? [...parts.keys()].filter((k) => /^cyl\d+$/.test(k)) : [id]));
+        const meshes = ids.flatMap((id) => parts.get(id) ?? []);
+        const centres: THREE.Vector3[] = [];
+        for (const mesh of meshes) {
+          const m = mesh.material as THREE.MeshStandardMaterial;
+          m.emissive.copy(color);
+          glowing.push(m);
+          centres.push(mesh.position.clone());
         }
+        if (!centres.length && anchors) centres.push(new THREE.Vector3(...anchors[f.zone]));
+        if (!centres.length) continue;
+        // One halo per fault, at the middle of the parts it covers.
+        const at = centres.reduce((a, c) => a.add(c), new THREE.Vector3()).divideScalar(centres.length);
+        const big = meshes.length === 0;
+        const halo = new THREE.Mesh(
+          new THREE.SphereGeometry(big ? 0.3 : 0.2, 24, 16),
+          new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.3, depthWrite: false }),
+        );
+        halo.position.copy(at);
+        halo.renderOrder = 10;
         halo.userData.phase = halos.length * 1.3;
+        markers.add(halo);
         halos.push(halo);
+        if (big) {
+          const core = new THREE.Mesh(new THREE.SphereGeometry(0.11, 20, 14), new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95 }));
+          core.position.copy(at);
+          core.renderOrder = 10;
+          markers.add(core);
+        }
       }
     };
-    const setFaults = (f: ZoneFault[]) => {
+    const setFaults = (f: PartFault[], on: boolean) => {
       faults = f;
+      xray = on;
       drawFaults();
     };
     stageRef.current = { show, setFaults };
@@ -431,8 +551,16 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
       for (const h of halos) {
         const p = 0.5 + 0.5 * Math.sin(time * 4 + h.userData.phase);
         h.scale.setScalar(0.8 + 0.5 * p);
-        (h.material as THREE.MeshBasicMaterial).opacity = 0.15 + 0.3 * (1 - p);
+        (h.material as THREE.MeshBasicMaterial).opacity = 0.12 + 0.22 * (1 - p);
       }
+      const glow = 0.8 + 0.9 * (0.5 + 0.5 * Math.sin(time * 4));
+      for (const m of glowing) m.emissiveIntensity = glow;
+
+      const frame = xray ? NEAR : FAR;
+      const k = 1 - Math.exp(-dt * 3);
+      camera.position.lerp(frame.eye, k);
+      lookAt.lerp(frame.at, k);
+      camera.lookAt(lookAt);
 
       renderer.render(scene, camera);
     });
@@ -454,10 +582,13 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
     stageRef.current?.show(connected ? decoded : null, connected ? vin : null);
   }, [connected, decoded, vin]);
 
-  const zones = useMemo(() => (connected ? faultZones(dtcs) : []), [connected, dtcs]);
+  const faults = useMemo(() => (connected ? faultParts(dtcs) : []), [connected, dtcs]);
+  // X-ray comes on by itself when there is something to point at; the button overrides it.
+  const [xrayPref, setXrayPref] = useState<boolean | null>(null);
+  const xray = connected && (xrayPref ?? faults.length > 0);
   useEffect(() => {
-    stageRef.current?.setFaults(zones);
-  }, [zones]);
+    stageRef.current?.setFaults(faults, xray);
+  }, [faults, xray]);
 
   const name = describeVehicle(decoded);
   const caption = !connected
@@ -469,18 +600,27 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
       <div className="flex items-center gap-2">
         <h2 className="text-sm font-medium text-ink">Vehicle</h2>
         {loading && <span className="text-[11px] text-muted">Loading model…</span>}
+        {connected && (
+          <button
+            onClick={() => setXrayPref(!xray)}
+            aria-pressed={xray}
+            className={`ml-auto rounded-md border px-2 py-0.5 text-[11px] ${xray ? "border-accent/50 bg-accent/15 text-accent" : "border-line text-ink-2 hover:text-ink"}`}
+          >
+            X-ray
+          </button>
+        )}
         {connected && checkEngine && (
-          <span className="ml-auto rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-warning">CHECK ENGINE</span>
+          <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-warning">CHECK ENGINE</span>
         )}
       </div>
-      <div ref={mountRef} className="mt-2 h-[220px] w-full overflow-hidden rounded-lg" aria-label={caption} role="img" />
+      <div ref={mountRef} className="mt-2 h-[260px] w-full overflow-hidden rounded-lg" aria-label={caption} role="img" />
       <p className="mt-1.5 text-xs text-muted">{caption}</p>
-      {zones.length > 0 && (
+      {faults.length > 0 && (
         <ul className="mt-3 space-y-1.5 border-t border-line pt-3">
-          {zones.map((z) => (
-            <li key={z.zone} className="flex items-start gap-2 text-xs">
+          {faults.map((z) => (
+            <li key={z.label} className="flex items-start gap-2 text-xs">
               <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: z.stored ? STORED_COLOR : PENDING_COLOR }} />
-              <span className="text-ink">{ZONE_LABELS[z.zone]}</span>
+              <span className="shrink-0 text-ink">{z.label}</span>
               <span className="text-muted">
                 {z.codes.map((c) => `${c} ${lookupDtc(c).title}`).join(", ")}
                 {!z.stored && " (pending)"}
