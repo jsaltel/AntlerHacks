@@ -131,7 +131,7 @@ const FUEL_PIDS = ["rpm", "stft1", "ltft1", "maf", "o2b1s1", "o2b1s2"];
  * measurement in one fixed pass (codes, freeze frame, knowledge base, idle and, on the
  * demo car, 2500 rpm sensor windows), then a single model call writes the report.
  */
-export async function runQuickDiagnosis(messages: Msg[], complaint: string, ctx: ExecContext, emit: (e: AgentEvent) => void): Promise<void> {
+export async function runQuickDiagnosis(messages: Msg[], complaint: string, ctx: ExecContext, emit: (e: AgentEvent) => void, attachments: Anthropic.Beta.BetaContentBlockParam[] = []): Promise<void> {
   let n = 0;
   const call = async (name: ToolName, input: unknown) => {
     const id = `quick_${Date.now()}_${n++}`;
@@ -179,15 +179,14 @@ export async function runQuickDiagnosis(messages: Msg[], complaint: string, ctx:
   evidence.code_lookups = await lookups;
   evidence.code_explanations = (await explanations).filter(Boolean);
 
-  messages.push({
-    role: "user",
-    content: `${diagnoseRequest(complaint)}
+  const request = `${diagnoseRequest(complaint)}
 
 Every measurement has already been collected for you (below): codes, freeze frame, knowledge-base entries, and live sensor windows${ctx.vehicle ? " at idle and at a steady 2500 rpm" : " at idle"}. Do not ask for more data. Reason over these numbers and call submit_diagnosis now with the complete report. For every code, say in plain words what it means on this make (code_explanations has a make-specific explanation; a database entry of "not in the database" is a manufacturer code you should explain from your knowledge of this make) and how to fix it. Keep it short and plain for the car owner: no jargon, at most 5 repair steps per cause, only the parts actually needed, and cite measured values as evidence.
 
 <measurements>
 ${JSON.stringify(evidence)}
-</measurements>`,
-  });
+</measurements>`;
+  // Photos or logs the owner attached go in front of the request, as evidence.
+  messages.push({ role: "user", content: [...attachments, { type: "text", text: request }] });
   return runConversation(messages, ctx, emit, "report");
 }

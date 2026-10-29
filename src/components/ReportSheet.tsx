@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import type { Diagnosis } from "@/lib/agent/executor";
 import { useDtcExplanation, useDtcLookups, type DtcLookup } from "@/lib/kb/dtc-client";
+import { useRealParts } from "@/lib/kb/parts-client";
 import { brandFromVin, brandLabel } from "@/lib/kb/vin";
 import { useDiagnostics } from "./DiagnosticsProvider";
 
@@ -55,6 +56,8 @@ export function ReportSheet({ onClose }: { onClose: () => void }) {
   const { diagnosis: d, vehicle, dtcs, reportMeta, isSim } = useDiagnostics();
   const rows = dtcs ? [...dtcs.stored.map((c) => [c, "Stored"]), ...dtcs.pending.map((c) => [c, "Pending"]), ...dtcs.permanent.map((c) => [c, "Permanent"])] : [];
   const found = useDtcLookups([...new Set(rows.map(([c]) => c))], vehicle?.vin);
+  const real = useRealParts(d, vehicle?.vin);
+  const realTotal = real.data?.parts.reduce((a, p) => a + p.qty * p.price_usd, 0);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -139,7 +142,7 @@ export function ReportSheet({ onClose }: { onClose: () => void }) {
               {[
                 ["Most likely cause", top.cause],
                 ["Confidence", `${Math.round(top.confidence * 100)}%`],
-                ["Parts", top.parts?.length ? usd(partsTotal(top)) : "–"],
+                ["Parts", realTotal ? usd(realTotal) : top.parts?.length ? `~${usd(partsTotal(top))}` : "–"],
                 ["Typical total", `${usd(top.est_cost_usd[0])}–${usd(top.est_cost_usd[1])}`],
               ].map(([k, v]) => (
                 <div key={k} className="bg-white px-4 py-3">
@@ -168,6 +171,67 @@ export function ReportSheet({ onClose }: { onClose: () => void }) {
               </table>
             </Section>
           )}
+
+          {top && (real.data?.parts.length || top.parts?.length) ? (
+            <Section title={`Parts${real.data ? ` · ${real.data.vehicle}` : ""}`}>
+              {real.data?.parts.length ? (
+                <table className="tabular w-full text-[13px]">
+                  <thead>
+                    <tr className="text-left text-[11px] text-[#8a8a8a]">
+                      <th className="pb-1.5 font-medium">Part</th>
+                      <th className="pb-1.5 font-medium">Brand · part no.</th>
+                      <th className="pb-1.5 font-medium">Where</th>
+                      <th className="pb-1.5 text-right font-medium">Qty</th>
+                      <th className="pb-1.5 text-right font-medium">Price</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {real.data.parts.map((p, j) => (
+                      <tr key={j} className="border-t border-[#efefef] align-top">
+                        <td className="py-2 pr-3">
+                          <div className="font-medium">{p.name}</div>
+                          {p.fitment && <div className="text-[11px] text-[#8a8a8a]">{p.fitment}</div>}
+                        </td>
+                        <td className="py-2 pr-3">
+                          {p.brand}
+                          <div className="font-mono text-[12px] text-[#5a5a5a]">{p.part_number}</div>
+                        </td>
+                        <td className="py-2 pr-3">
+                          <a href={p.url} target="_blank" rel="noreferrer noopener" className="text-[#2563eb] underline">
+                            {p.retailer}
+                          </a>
+                          <div className="max-w-[220px] truncate text-[10px] text-[#8a8a8a] print:whitespace-normal print:break-all">{p.url}</div>
+                        </td>
+                        <td className="py-2 text-right">{p.qty}</td>
+                        <td className="py-2 text-right">{usd(p.qty * p.price_usd)}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t-2 border-[#1a1a1a] font-semibold">
+                      <td className="py-2" colSpan={4}>
+                        Parts total
+                      </td>
+                      <td className="py-2 text-right">{usd(realTotal ?? 0)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              ) : (
+                <ul className="tabular space-y-1 text-[13px]">
+                  {(top.parts ?? []).map((p, j) => (
+                    <li key={j} className="flex justify-between">
+                      <span>
+                        {p.qty > 1 ? `${p.qty} × ` : ""}
+                        {p.name}
+                      </span>
+                      <span className="text-[#8a8a8a]">~{usd(p.qty * p.est_price_usd)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="mt-2 text-[11px] text-[#8a8a8a]">
+                {real.data ? (real.data.note ? `${real.data.note} ` : "") + `Prices and part numbers from current retailer listings, ${(reportMeta?.at ?? new Date()).toLocaleDateString()}.` : real.loading ? "Checking live listings… prices shown are estimates." : "Estimated prices."}
+              </p>
+            </Section>
+          ) : null}
 
           <Section title="Findings and repair plan">
             <ol className="space-y-6">
@@ -220,7 +284,7 @@ export function ReportSheet({ onClose }: { onClose: () => void }) {
                         </ol>
                       </div>
                     )}
-                    {rc.parts && rc.parts.length > 0 && (
+                    {i > 0 && rc.parts && rc.parts.length > 0 && (
                       <table className="tabular w-full text-[13px]">
                         <thead>
                           <tr className="text-left text-[11px] text-[#8a8a8a]">

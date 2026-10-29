@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { PID_BY_KEY } from "@/lib/obd/pids";
 import { lookupDtc } from "@/lib/kb/dtcs";
 import { useDtcExplanation, useDtcLookups, type DtcLookup } from "@/lib/kb/dtc-client";
+import { useRealParts } from "@/lib/kb/parts-client";
+import type { ChatAttachment } from "@/lib/agent/attachments";
 import type { Diagnosis } from "@/lib/agent/executor";
 import type { WireLogEntry } from "@/lib/obd/transport";
 
@@ -138,7 +140,7 @@ function DtcRow({ code, kind, db, vin }: { code: string; kind: string; db?: DtcL
 /* ---------- Agent timeline ---------- */
 
 export type TimelineItem =
-  | { id: number; kind: "user"; text: string }
+  | { id: number; kind: "user"; text: string; attachments?: ChatAttachment[] }
   | { id: number; kind: "thinking"; text: string }
   | { id: number; kind: "text"; text: string }
   | { id: number; kind: "tool"; toolId: string; name: string; input: Record<string, unknown>; result?: unknown; isError?: boolean; ms?: number }
@@ -206,7 +208,22 @@ export function Timeline({ items, running }: { items: TimelineItem[]; running: b
         if (it.kind === "user")
           return (
             <div key={it.id} className="flex justify-end pt-2">
-              <div className="max-w-[85%] rounded-2xl rounded-br-md bg-accent px-3.5 py-2 text-sm whitespace-pre-wrap text-white">{it.text}</div>
+              <div className="max-w-[85%] rounded-2xl rounded-br-md bg-accent px-3.5 py-2 text-sm whitespace-pre-wrap text-white">
+                {it.attachments && it.attachments.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {it.attachments.map((a) =>
+                      a.kind === "image" ? (
+                        <img key={a.url} src={a.url} alt={a.name} title={a.name} className="h-12 w-12 rounded-md object-cover" />
+                      ) : (
+                        <span key={a.url} title={a.name} className="flex h-12 min-w-12 items-center justify-center rounded-md bg-white/15 px-1.5 font-mono text-[10px] leading-none">
+                          {a.name.slice(0, 10)}
+                        </span>
+                      ),
+                    )}
+                  </div>
+                )}
+                {it.text}
+              </div>
             </div>
           );
         if (it.kind === "thinking")
@@ -274,6 +291,76 @@ function CodeHeading({ code, db, vin }: { code: string; db?: DtcLookup; vin?: st
   );
 }
 
+/** Parts for the most likely repair: real listings from web search, with the AI's estimate until they arrive. */
+function PartsSection({ d, vin }: { d: Diagnosis; vin?: string | null }) {
+  const top = d.root_causes[0];
+  const { data, error, loading } = useRealParts(d, vin);
+  const estimate = top.parts ?? [];
+  if (!loading && !data?.parts.length && !estimate.length) return null;
+  return (
+    <div className="mt-4 rounded-lg border border-line p-4">
+      <div className="mb-3 flex flex-wrap items-baseline gap-x-2">
+        <h3 className="text-sm font-semibold text-ink">Parts</h3>
+        {data && <span className="text-xs text-muted">for {data.vehicle}</span>}
+        {loading && (
+          <span className="flex items-center gap-1.5 text-xs text-muted">
+            <span className="pulse inline-block h-1.5 w-1.5 rounded-full bg-accent" /> searching retailers for real part numbers and prices…
+          </span>
+        )}
+      </div>
+      {data && data.parts.length > 0 ? (
+        <>
+          <ul className="divide-y divide-line">
+            {data.parts.map((p, i) => (
+              <li key={i} className="py-2.5 first:pt-0">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-ink">
+                      {p.qty > 1 ? `${p.qty} × ` : ""}
+                      {p.name}
+                    </div>
+                    <div className="mt-0.5 text-xs text-ink-2">
+                      {p.brand} · <span className="font-mono">{p.part_number}</span>
+                      {p.oem_number && p.oem_number !== p.part_number && <span className="text-muted"> · OEM {p.oem_number}</span>}
+                    </div>
+                  </div>
+                  <div className="tabular shrink-0 text-right text-sm font-semibold text-ink">${(p.qty * p.price_usd).toFixed(2)}</div>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+                  <a href={p.url} target="_blank" rel="noreferrer noopener" className="text-accent hover:underline">
+                    Buy at {p.retailer} ↗
+                  </a>
+                  {p.fitment && <span className="text-muted">{p.fitment}</span>}
+                </div>
+              </li>
+            ))}
+          </ul>
+          <div className="tabular mt-2 flex justify-between border-t border-line pt-2 text-sm font-semibold text-ink">
+            <span>Parts total</span>
+            <span>${data.parts.reduce((a, p) => a + p.qty * p.price_usd, 0).toFixed(2)}</span>
+          </div>
+          {data.note && <p className="mt-2 text-xs text-ink-2">{data.note}</p>}
+        </>
+      ) : (
+        <>
+          <ul className="tabular space-y-1 text-sm text-ink-2">
+            {estimate.map((p, i) => (
+              <li key={i} className="flex justify-between gap-3">
+                <span>
+                  {p.qty > 1 ? `${p.qty} × ` : ""}
+                  {p.name}
+                </span>
+                <span className="text-muted">~${(p.qty * p.est_price_usd).toFixed(0)}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-muted">{error ? `Estimated prices. Couldn't check live listings (${error}).` : data ? "No matching listings found; prices are estimates." : "Estimated prices until live listings load."}</p>
+        </>
+      )}
+    </div>
+  );
+}
+
 /**
  * The diagnosis, short: the codes as headings, the verdict, the most likely cause with what
  * to do, and next steps. Evidence, other causes and ruled-out causes fold away under Details.
@@ -285,7 +372,6 @@ export function DiagnosisReport({ d, onOpen }: { d: Diagnosis; onOpen?: () => vo
   const sev = SEVERITY[d.severity];
   const [top, ...others] = d.root_causes;
   const steps = top?.repair_steps?.length ? top.repair_steps : top ? [top.fix] : [];
-  const parts = top?.parts ?? [];
   return (
     <div className="panel p-5" id="report">
       {codes.length > 0 && (
@@ -331,24 +417,10 @@ export function DiagnosisReport({ d, onOpen }: { d: Diagnosis; onOpen?: () => vo
               </li>
             ))}
           </ol>
-          {parts.length > 0 && (
-            <details className="mt-3 text-xs">
-              <summary className="tabular cursor-pointer text-muted">Parts · ${parts.reduce((a, p) => a + p.qty * p.est_price_usd, 0).toFixed(0)}</summary>
-              <ul className="tabular mt-1.5 space-y-0.5 text-ink-2">
-                {parts.map((p, j) => (
-                  <li key={j} className="flex justify-between gap-3">
-                    <span>
-                      {p.qty > 1 ? `${p.qty} × ` : ""}
-                      {p.name}
-                    </span>
-                    <span>${(p.qty * p.est_price_usd).toFixed(0)}</span>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
         </div>
       )}
+
+      {top && <PartsSection d={d} vin={vehicle?.vin} />}
 
       {d.next_steps.length > 0 && (
         <div className="mt-4">
