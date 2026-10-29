@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PID_BY_KEY } from "@/lib/obd/pids";
 import { lookupDtc } from "@/lib/kb/dtcs";
+import type { ChatAttachment } from "@/lib/agent/attachments";
 import type { Diagnosis } from "@/lib/agent/executor";
 import type { WireLogEntry } from "@/lib/obd/transport";
 
@@ -80,7 +81,7 @@ export function DtcPanel({ dtcs }: { dtcs: { stored: string[]; pending: string[]
 /* ---------- Agent timeline ---------- */
 
 export type TimelineItem =
-  | { id: number; kind: "user"; text: string }
+  | { id: number; kind: "user"; text: string; attachments?: ChatAttachment[] }
   | { id: number; kind: "thinking"; text: string }
   | { id: number; kind: "text"; text: string }
   | { id: number; kind: "tool"; toolId: string; name: string; input: Record<string, unknown>; result?: unknown; isError?: boolean; ms?: number }
@@ -148,7 +149,22 @@ export function Timeline({ items, running }: { items: TimelineItem[]; running: b
         if (it.kind === "user")
           return (
             <div key={it.id} className="flex justify-end pt-2">
-              <div className="max-w-[85%] rounded-2xl rounded-br-md bg-accent px-3.5 py-2 text-sm whitespace-pre-wrap text-white">{it.text}</div>
+              <div className="max-w-[85%] rounded-2xl rounded-br-md bg-accent px-3.5 py-2 text-sm whitespace-pre-wrap text-white">
+                {it.attachments && it.attachments.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {it.attachments.map((a) =>
+                      a.kind === "image" ? (
+                        <img key={a.url} src={a.url} alt={a.name} title={a.name} className="h-12 w-12 rounded-md object-cover" />
+                      ) : (
+                        <span key={a.url} title={a.name} className="flex h-12 min-w-12 items-center justify-center rounded-md bg-white/15 px-1.5 font-mono text-[10px] leading-none">
+                          {a.name.slice(0, 10)}
+                        </span>
+                      ),
+                    )}
+                  </div>
+                )}
+                {it.text}
+              </div>
             </div>
           );
         if (it.kind === "thinking")
