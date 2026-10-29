@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
@@ -7,11 +7,31 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { describeVehicle, type DecodedVehicle } from "@/lib/vehicle/vin";
 import type { MonitorSample } from "@/lib/agent/executor";
 import { useDiagnostics } from "./DiagnosticsProvider";
+import { faultZones, ZONE_LABELS, type Zone, type ZoneFault } from "@/lib/vehicle/zones";
+import { lookupDtc } from "@/lib/kb/dtcs";
 
 type Body = "sedan" | "coupe" | "pickup" | "suv" | "hatchback";
 
 const PAINTS = ["#b3261e", "#1f4e9c", "#c9ccd1", "#2b2d31", "#f2f2ee", "#5a6b4e", "#7a1f2b", "#3d6f8f"];
 const PORSCHE_URL = "/models/porsche-911-gt3-rs.glb";
+const STORED_COLOR = "#ff3b30";
+const PENDING_COLOR = "#fab219";
+
+type Anchors = Record<Zone, [number, number, number]>;
+
+/** Zone positions on the GT3 RS (rear engine, front radiators and tank), in metres on the fitted 4.6 m model. */
+const PORSCHE_ANCHORS: Anchors = {
+  engine: [0, 0.75, -1.55],
+  intake: [0, 1.0, -1.3],
+  exhaust: [0, 0.35, -2.1],
+  cooling: [0, 0.45, 2.05],
+  fuel_tank: [0, 0.5, 1.35],
+  transmission: [0, 0.45, -0.75],
+  battery: [0.35, 0.6, 1.65],
+  electronics: [0, 0.9, 0.45],
+  chassis: [0.75, 0.35, 1.25],
+};
+
 const PICKUP_MODELS = ["f-150", "silverado", "ram", "tacoma", "tundra", "sierra", "ranger", "colorado"];
 
 function bodyFor(d: DecodedVehicle | null): Body {
@@ -62,6 +82,8 @@ interface Props {
   live: Record<string, number | null>;
   history: MonitorSample[];
   checkEngine: boolean;
+  /** Trouble codes to highlight on the car, by area. */
+  dtcs: { stored: string[]; pending: string[]; permanent: string[] } | null;
 }
 
 /**
@@ -71,10 +93,10 @@ interface Props {
  * engine roughness, so a misfire is visible at idle. Porsches, and the
  * showroom view before anything is connected, use a real GT3 RS model.
  */
-export function VehicleView({ decoded, vin, connected, live, history, checkEngine }: Props) {
+export function VehicleView({ decoded, vin, connected, live, history, checkEngine, dtcs }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const liveRef = useRef({ speed: 0, rpm: 0, roughness: 0 });
-  const stageRef = useRef<{ show: (d: DecodedVehicle | null, vin: string | null) => void } | null>(null);
+  const stageRef = useRef<{ show: (d: DecodedVehicle | null, vin: string | null) => void; setFaults: (f: ZoneFault[]) => void } | null>(null);
   const [loading, setLoading] = useState(false);
 
   liveRef.current = connected
@@ -119,6 +141,10 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
     let chassis = new THREE.Group();
     let wheels: THREE.Object3D[] = [];
     let wheelAngle = 0;
+    let anchors: Anchors | null = null;
+    let faults: ZoneFault[] = [];
+    const markers = new THREE.Group();
+    const halos: THREE.Mesh[] = [];
     let yaw = -0.55;
     let dragYaw = 0;
     let idle = 0;
@@ -133,6 +159,7 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
       chassis = new THREE.Group();
       car.add(chassis);
       wheels = [];
+      anchors = null;
       car.scale.setScalar(1);
     };
 
@@ -237,6 +264,18 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
           box(t, [s * wid * 0.5, wheelD * 0.62, z], [0.02, wheelD * 0.5, wheelD * 1.15], trim);
         }
 
+      anchors = {
+        engine: [0, ride + bodyH * 0.6, len * 0.34],
+        intake: [-wid * 0.18, top - 0.02, len * 0.27],
+        exhaust: [0, Math.max(0.16, ride * 0.55), len * 0.06],
+        cooling: [0, ride + bodyH * 0.5, len * 0.46],
+        fuel_tank: [wid * 0.22, ride + 0.12, -len * 0.28],
+        transmission: [0, ride + 0.12, len * 0.17],
+        battery: [wid * 0.3, top - 0.08, len * 0.39],
+        electronics: [0, top + 0.12, cz + cl * 0.42],
+        chassis: [wid * 0.47, wheelD / 2, axle],
+      };
+
       // Fit long vehicles in frame.
       car.scale.setScalar(4.7 / Math.max(4.7, len));
     };
@@ -283,6 +322,7 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
       const url = modelUrlFor(d);
       if (!url) {
         build(bodyFor(d), paintFor(v));
+        drawFaults();
         setLoading(false);
         return;
       }
@@ -291,13 +331,49 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
         .then((scene) => {
           if (my !== token) return;
           fitImported(scene.clone(true));
+          anchors = PORSCHE_ANCHORS;
+          drawFaults();
         })
         .catch(() => {
-          if (my === token) build("coupe", paintFor(v));
+          if (my !== token) return;
+          build("coupe", paintFor(v));
+          drawFaults();
         })
         .finally(() => my === token && setLoading(false));
     };
-    stageRef.current = { show };
+    /**
+     * A glowing marker per faulty area, drawn on top of the body so it reads
+     * like an x-ray: red for stored codes, amber for pending only.
+     */
+    const drawFaults = () => {
+      for (const m of markers.children) {
+        const mesh = m as THREE.Mesh;
+        mesh.geometry.dispose();
+        (mesh.material as THREE.Material).dispose();
+      }
+      markers.clear();
+      halos.length = 0;
+      car.add(markers);
+      if (!anchors) return;
+      for (const f of faults) {
+        const [x, y, z] = anchors[f.zone];
+        const color = f.stored ? STORED_COLOR : PENDING_COLOR;
+        const core = new THREE.Mesh(new THREE.SphereGeometry(0.11, 20, 14), new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95 }));
+        const halo = new THREE.Mesh(new THREE.SphereGeometry(0.3, 24, 16), new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.3, depthWrite: false }));
+        for (const m of [core, halo]) {
+          m.position.set(x, y, z);
+          m.renderOrder = 10;
+          markers.add(m);
+        }
+        halo.userData.phase = halos.length * 1.3;
+        halos.push(halo);
+      }
+    };
+    const setFaults = (f: ZoneFault[]) => {
+      faults = f;
+      drawFaults();
+    };
+    stageRef.current = { show, setFaults };
 
     const resize = () => {
       const w = mount.clientWidth;
@@ -352,6 +428,12 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
       chassis.position.y = Math.sin(time * (rpm / 60) * 0.5) * hum + noise(time * 29) * rough;
       chassis.rotation.z = noise(time * 25 + 4) * rough * 0.5;
 
+      for (const h of halos) {
+        const p = 0.5 + 0.5 * Math.sin(time * 4 + h.userData.phase);
+        h.scale.setScalar(0.8 + 0.5 * p);
+        (h.material as THREE.MeshBasicMaterial).opacity = 0.15 + 0.3 * (1 - p);
+      }
+
       renderer.render(scene, camera);
     });
 
@@ -372,6 +454,11 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
     stageRef.current?.show(connected ? decoded : null, connected ? vin : null);
   }, [connected, decoded, vin]);
 
+  const zones = useMemo(() => (connected ? faultZones(dtcs) : []), [connected, dtcs]);
+  useEffect(() => {
+    stageRef.current?.setFaults(zones);
+  }, [zones]);
+
   const name = describeVehicle(decoded);
   const caption = !connected
     ? "Showroom: Porsche 911 GT3 RS. Connect to see your car."
@@ -388,6 +475,20 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
       </div>
       <div ref={mountRef} className="mt-2 h-[220px] w-full overflow-hidden rounded-lg" aria-label={caption} role="img" />
       <p className="mt-1.5 text-xs text-muted">{caption}</p>
+      {zones.length > 0 && (
+        <ul className="mt-3 space-y-1.5 border-t border-line pt-3">
+          {zones.map((z) => (
+            <li key={z.zone} className="flex items-start gap-2 text-xs">
+              <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: z.stored ? STORED_COLOR : PENDING_COLOR }} />
+              <span className="text-ink">{ZONE_LABELS[z.zone]}</span>
+              <span className="text-muted">
+                {z.codes.map((c) => `${c} ${lookupDtc(c).title}`).join(", ")}
+                {!z.stored && " (pending)"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -395,5 +496,5 @@ export function VehicleView({ decoded, vin, connected, live, history, checkEngin
 /** The vehicle panel wired to the shared adapter connection. */
 export function ConnectedVehicleView() {
   const { decoded, vehicle, connected, live, history, dtcs } = useDiagnostics();
-  return <VehicleView decoded={decoded} vin={vehicle?.vin ?? null} connected={connected} live={live} history={history} checkEngine={!!dtcs?.stored.length} />;
+  return <VehicleView decoded={decoded} vin={vehicle?.vin ?? null} connected={connected} live={live} history={history} checkEngine={!!dtcs?.stored.length} dtcs={dtcs} />;
 }
