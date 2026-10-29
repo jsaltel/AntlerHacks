@@ -1,4 +1,5 @@
 "use client";
+import { useRef } from "react";
 import { SCENARIOS } from "@/lib/obd/simulator";
 import { ConnectionBar } from "@/components/ConnectionBar";
 import { useDiagnostics } from "@/components/DiagnosticsProvider";
@@ -7,6 +8,7 @@ import { DiagnosisReport, DtcPanel, Gauges, Timeline } from "@/components/Panels
 const SUGGESTIONS = ["What do my trouble codes mean?", "Is my car safe to drive right now?", "My engine idles rough when cold. What could it be?", "What does P0420 mean and how much does it cost to fix?"];
 
 export default function Technician() {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { live, dtcs, complaint, setComplaint, running, items, diagnosis, usage, cost, testLabel, connected, isSim, scenario, actualScenario, run, send, newChat, stop } = useDiagnostics();
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-5">
@@ -60,21 +62,41 @@ export default function Technician() {
                 send(q);
               }}
             >
-              <textarea
-                id="complaint"
-                value={complaint}
-                onChange={(e) => setComplaint(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    e.currentTarget.form?.requestSubmit();
-                  }
-                }}
-                rows={2}
-                placeholder="Describe a problem or ask a question… (Enter to send, Shift+Enter for a new line)"
-                aria-label="Message the AI technician"
-                className="w-full resize-none rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-muted"
-              />
+              <div className="flex items-center rounded-lg border border-line bg-surface-2 pl-1.5">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,video/*,.log,.txt,.csv,.json"
+                  multiple
+                  className="hidden"
+                  tabIndex={-1}
+                  aria-hidden
+                />
+                <button
+                  type="button"
+                  title="add an image, video or log..."
+                  aria-label="add an image, video or log..."
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-lg leading-none text-ink-2 hover:bg-page hover:text-ink"
+                >
+                  +
+                </button>
+                <textarea
+                  id="complaint"
+                  value={complaint}
+                  onChange={(e) => setComplaint(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      e.currentTarget.form?.requestSubmit();
+                    }
+                  }}
+                  rows={1}
+                  placeholder="Describe a problem or ask a question… (Enter to send, Shift+Enter for a new line)"
+                  aria-label="Message the AI technician"
+                  className="field-sizing-content max-h-32 min-h-8 w-full flex-1 resize-none bg-transparent py-1.5 pl-2 pr-3 text-sm leading-5 text-ink placeholder:text-muted"
+                />
+              </div>
               <div className="mt-2 flex items-center gap-2">
                 <button
                   type="button"
