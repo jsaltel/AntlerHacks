@@ -42,6 +42,7 @@ Browser (Chrome/Edge)                               Next.js server
 | `src/lib/obd/simulator.ts` | Engine model + ELM327 emulator with 6 fault scenarios |
 | `src/lib/obd/serial.ts`, `ble.ts` | Web Serial (baud auto-detect 38400/115200/9600) and Web Bluetooth transports |
 | `src/lib/kb/dtcs.ts` | Repair knowledge base: causes, discriminating tests, costs |
+| `src/lib/kb/dtc-db.ts`, `src/app/api/dtc` | Trouble-code database: every generic SAE code plus manufacturer tables for 30+ brands, picked by the VIN's brand. Human-readable list in [docs/DTC_CODES.md](docs/DTC_CODES.md) |
 | `src/lib/agent/tools.ts` | Tool contract + system prompt (shared by server and browser) |
 | `src/lib/agent/runner.ts`, `executor.ts` | Browser-side agent loop and tool execution |
 | `src/app/api/agent/route.ts` | Claude streaming endpoint (diagnostics) |
@@ -83,6 +84,7 @@ Tests:
 ```bash
 npx tsx scripts/sim-smoke.ts                 # protocol stack against every simulator scenario
 npx tsx scripts/engine-check.ts              # stock dyno, drag and safety results for every car and condition
+node scripts/build-dtc-db.mjs                # refresh the trouble-code database and docs/DTC_CODES.md
 npm run build && npx next start -p 3100 &
 node scripts/e2e-mock.mjs out.png            # full UI + tool loop with a scripted model (no API key needed)
 ```

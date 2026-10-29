@@ -1,4 +1,5 @@
 "use client";
+import { PageHeader } from "@/components/PageHeader";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ENGINES, ENGINE_BY_ID, ENVIRONMENTS, LIMITS, engineAt, envFor, runDrag, runDyno, stockTune, type EngineSpec, type Environment, type Tune } from "@/lib/sim/engine";
 import { deleteTune, loadTunes } from "@/lib/tune/storage";
@@ -239,8 +240,8 @@ export default function SimPage() {
 
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-5">
-      <header className="mb-5 flex flex-wrap items-center gap-3">
-        <h1 className="mr-2 text-sm font-medium text-ink-2">Car simulation environment</h1>
+      <PageHeader title="Drive simulator" description="Drive stock or tuned maps in real time." />
+      <header className="panel mb-5 flex flex-wrap items-center gap-3 px-3 py-2.5">
         <select
           value={engineId}
           onChange={(e) => {
@@ -460,7 +461,7 @@ export default function SimPage() {
           <div className="panel p-4 text-xs text-ink-2">
             <h2 className="mb-1 text-sm font-medium text-ink">About this environment</h2>
             <p>
-              {spec.name}, {spec.engine}, {spec.vehicle.massKg} kg, {spec.vehicle.drive.toUpperCase()}, {spec.vehicle.gears.length}-speed. The simulator models airflow and volumetric efficiency, turbo spool, intake heat, injector capacity, spark against the knock limit, exhaust temperature, traction, shifts and aero drag. Tunes from the Tuning page appear in the calibration menu after you press Send to simulator.
+              {spec.name}, {spec.engine}, {spec.vehicle.massKg} kg, {spec.vehicle.drive.toUpperCase()}, {spec.vehicle.gears.length}-speed. Tunes appear in the calibration menu after Send to simulator.
             </p>
           </div>
         </section>

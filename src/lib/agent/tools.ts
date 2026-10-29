@@ -103,19 +103,19 @@ const defs: { name: ToolName; description: string; input_schema: Anthropic.Tool.
   {
     name: "request_driver_action",
     description:
-      "Ask the person at the car to change engine operating condition, then wait until they confirm it is done. Actions: idle (return to idle), hold_2500 (hold steady 2500 rpm in park/neutral), cruise (steady road speed, only if someone else is driving), snap_throttle (quick blip to ~4000 rpm and release). Use this to run discriminating tests, e.g. compare fuel trims at idle vs 2500 rpm. Always return the engine to idle when the test is finished.",
+      "Put the engine in a test condition. This is automatic and never involves the person: it returns done:false when the vehicle cannot do it on its own (a real car stays at idle), so then test with idle data instead. Actions: idle (return to idle), hold_2500 (hold steady 2500 rpm in park/neutral), cruise (steady road speed, only if someone else is driving), snap_throttle (quick blip to ~4000 rpm and release). Use this to run discriminating tests, e.g. compare fuel trims at idle vs 2500 rpm. Always return the engine to idle when the test is finished.",
     input_schema: {
       type: "object",
       properties: {
         action: { type: "string", enum: [...DRIVER_ACTIONS] },
-        instruction: { type: "string", description: "Short, plain-language instruction shown to the person, including any safety note" },
+        instruction: { type: "string", description: "Short description of the test condition, shown in the progress log" },
       },
       required: ["action", "instruction"],
     },
   },
   {
     name: "lookup_dtc",
-    description: "Look up a trouble code in the local repair knowledge base: meaning, severity, ranked common causes, which live-data patterns discriminate between causes, and typical repair cost.",
+    description: "Look up a trouble code in the trouble-code database (every generic SAE code plus manufacturer tables for 30+ brands, matched to this car's brand from its VIN): meaning, description, ranked causes, symptoms and repair cost; common codes also include workshop notes on which live-data patterns discriminate between causes. Manufacturer codes without a known brand return candidates per make.",
     input_schema: { type: "object", properties: { code: { type: "string", description: "e.g. P0171" } }, required: ["code"] },
   },
   {
@@ -177,7 +177,8 @@ const defs: { name: ToolName; description: string; input_schema: Anthropic.Tool.
   },
 ];
 
-export const TOOL_DEFINITIONS = defs.map((d) => ({ ...d, eager_input_streaming: true }));
+// Clearing codes would need the person's approval, and the technician never asks them to do anything.
+export const TOOL_DEFINITIONS = defs.filter((d) => d.name !== "clear_dtcs").map((d) => ({ ...d, eager_input_streaming: true }));
 
 export const SYSTEM_PROMPT = `You are an expert automotive diagnostic technician connected live to a car through an OBD-II adapter. You work like a good master tech: form hypotheses from the codes, then run tests that discriminate between them before concluding. You never stop at "the code says X".
 
@@ -185,7 +186,7 @@ How to work:
 1. get_vehicle_info, then read_dtcs and read_freeze_frame (freeze frame before anything that could clear it).
 2. lookup_dtc for each code to get the candidate causes and the discriminating tests.
 3. Baseline: monitor the relevant PIDs at warm idle.
-4. Design and run at least one discriminating test with request_driver_action + monitor_pids (for example trims at idle vs 2500 rpm, upstream vs downstream O2 switching at 2500 rpm, coolant behaviour over time, rpm stability). Return the engine to idle afterwards.
+4. Design and run at least one discriminating test with monitor_pids, using request_driver_action to change the test condition when the vehicle supports it (for example trims at idle vs 2500 rpm, upstream vs downstream O2 switching at 2500 rpm, coolant behaviour over time, rpm stability). If request_driver_action returns done:false, work from idle data. Return the engine to idle afterwards.
 5. Reason over the numbers. Explicitly rule causes in or out with measured values.
 6. Call submit_diagnosis once with ranked root causes, evidence (cite numbers), ruled-out causes, cost estimates and next steps. For each root cause write the report a master mechanic would hand over: ordered repair steps (including how to verify the fix with the scanner afterwards), the parts list with quantities and typical prices, the tools needed and typical labor hours.
 
@@ -195,6 +196,7 @@ Conversation:
 - If no vehicle is connected, the car tools fail; answer from your knowledge and suggest connecting when live data would help.
 
 Rules:
+- Never ask the person to do anything: no revving, driving, inspecting, or approving. Do every check yourself with the tools and put anything physical (e.g. "inspect the PCV hose") in the report's repair steps instead.
 - Keep each message between tool calls to one or two short sentences explaining what you are checking and why; the person watches your progress live.
 - If there are no codes, still check health (trims, O2 switching, coolant temp, charging voltage) and report.
 - Safety first: if you see overheating, very low voltage, or severe misfire, say so immediately and mark stop_driving.

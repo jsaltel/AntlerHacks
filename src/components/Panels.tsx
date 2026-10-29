@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PID_BY_KEY } from "@/lib/obd/pids";
 import { lookupDtc } from "@/lib/kb/dtcs";
+import { useDtcLookups } from "@/lib/kb/dtc-client";
 import type { Diagnosis } from "@/lib/agent/executor";
 import type { WireLogEntry } from "@/lib/obd/transport";
 
@@ -49,8 +50,9 @@ export function Gauges({ values }: { values: Record<string, number | null> }) {
 
 /* ---------- Trouble codes ---------- */
 
-export function DtcPanel({ dtcs }: { dtcs: { stored: string[]; pending: string[]; permanent: string[] } | null }) {
+export function DtcPanel({ dtcs, vin }: { dtcs: { stored: string[]; pending: string[]; permanent: string[] } | null; vin?: string | null }) {
   const rows = dtcs ? [...dtcs.stored.map((c) => [c, "stored"]), ...dtcs.pending.map((c) => [c, "pending"]), ...dtcs.permanent.map((c) => [c, "permanent"])] : [];
+  const found = useDtcLookups([...new Set(rows.map(([c]) => c))], vin);
   return (
     <div className="panel p-4">
       <h2 className="mb-2 text-sm font-medium text-ink">Trouble codes</h2>
@@ -59,13 +61,27 @@ export function DtcPanel({ dtcs }: { dtcs: { stored: string[]; pending: string[]
       <ul className="space-y-2">
         {rows.map(([c, kind]) => {
           const info = lookupDtc(c);
+          const db = found[c];
           return (
             <li key={c + kind} className="flex items-start gap-3">
               <span className="rounded-md bg-surface-2 px-2 py-0.5 font-mono text-sm text-ink">{c}</span>
               <div className="min-w-0">
-                <div className="text-sm text-ink">{info.title}</div>
+                <div className="text-sm text-ink" title={db?.description}>
+                  {db?.title ?? info.title}
+                </div>
+                {db?.candidates && (
+                  <ul className="mt-0.5 text-xs text-ink-2">
+                    {db.candidates.slice(0, 3).map((m) => (
+                      <li key={m.meaning}>
+                        {m.meaning} <span className="text-muted">({m.makes.join(", ")})</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 <div className="text-xs text-muted">
-                  {kind} · {info.system}
+                  {kind} · {db?.system ?? info.system}
+                  {db?.source === "manufacturer" && db.make ? ` · ${db.make} code` : ""}
+                  {db?.source === "unattributed" ? " · likely meaning" : ""}
                   {"severity" in info ? ` · ${info.severity}` : ""}
                 </div>
               </div>
@@ -99,7 +115,7 @@ function toolTitle(name: string, input: Record<string, unknown>): string {
     case "monitor_pids":
       return `Test: ${input.label ?? "monitoring"} · ${(input.pids as string[] | undefined)?.join(", ")} for ${input.duration_s}s`;
     case "request_driver_action":
-      return `Driver: ${String(input.action ?? "").replace("_", " ")}`;
+      return `Test condition: ${String(input.action ?? "").replace("_", " ")}`;
     case "lookup_dtc":
       return `Knowledge base: ${input.code}`;
     case "clear_dtcs":
@@ -339,62 +355,5 @@ export function WireLog({ log }: { log: WireLogEntry[] }) {
         </pre>
       )}
     </div>
-  );
-}
-
-/* ---------- Modals ---------- */
-
-export function Modal({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="panel w-full max-w-md p-6 shadow-2xl">
-        <h2 className="mb-3 text-base font-semibold text-ink">{title}</h2>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-export function DriverActionModal({ action, instruction, simulated, onDone }: { action: string; instruction: string; simulated: boolean; onDone: (ok: boolean) => void }) {
-  const [left, setLeft] = useState(3);
-  useEffect(() => {
-    if (!simulated) return;
-    const iv = setInterval(() => setLeft((s) => s - 1), 1000);
-    return () => clearInterval(iv);
-  }, [simulated]);
-  useEffect(() => {
-    if (simulated && left <= 0) onDone(true);
-  }, [left, simulated, onDone]);
-  return (
-    <Modal title="The technician needs your help">
-      <div className="mb-2 inline-block rounded bg-surface-2 px-2 py-0.5 font-mono text-xs text-accent">{action}</div>
-      <p className="mb-5 text-sm leading-relaxed text-ink">{instruction}</p>
-      {simulated && <p className="mb-4 text-xs text-muted">Simulator: the virtual driver will do this in {Math.max(0, left)}s.</p>}
-      <div className="flex justify-end gap-2">
-        <button onClick={() => onDone(false)} className="rounded-lg px-3 py-1.5 text-sm text-ink-2 hover:bg-surface-2">
-          Can&apos;t do this
-        </button>
-        <button onClick={() => onDone(true)} className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white">
-          Done
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
-export function ConfirmClearModal({ reason, onDone }: { reason: string; onDone: (ok: boolean) => void }) {
-  return (
-    <Modal title="Clear trouble codes?">
-      <p className="mb-2 text-sm text-ink">{reason}</p>
-      <p className="mb-5 text-xs text-muted">This turns off the check engine light, erases freeze-frame data and resets readiness monitors. The car may fail an emissions inspection until monitors complete.</p>
-      <div className="flex justify-end gap-2">
-        <button onClick={() => onDone(false)} className="rounded-lg px-3 py-1.5 text-sm text-ink-2 hover:bg-surface-2">
-          Keep codes
-        </button>
-        <button onClick={() => onDone(true)} className="rounded-lg bg-critical px-3 py-1.5 text-sm font-medium text-white">
-          Clear codes
-        </button>
-      </div>
-    </Modal>
   );
 }

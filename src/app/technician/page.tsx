@@ -7,10 +7,10 @@ import { DiagnosisReport, DtcPanel, Gauges, Timeline } from "@/components/Panels
 const SUGGESTIONS = ["What do my trouble codes mean?", "Is my car safe to drive right now?", "My engine idles rough when cold. What could it be?", "What does P0420 mean and how much does it cost to fix?"];
 
 export default function Technician() {
-  const { live, dtcs, complaint, setComplaint, running, items, diagnosis, usage, cost, testLabel, connected, isSim, scenario, actualScenario, run, send, newChat, stop } = useDiagnostics();
+  const { live, dtcs, vehicle, complaint, setComplaint, running, items, diagnosis, usage, cost, testLabel, connected, isSim, scenario, actualScenario, run, send, newChat, stop } = useDiagnostics();
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-5">
-      <ConnectionBar title="AI technician" />
+      <ConnectionBar title="AI technician" description="Ask anything about your car." />
       <main className="grid grid-cols-12 gap-5">
         <section className="col-span-12 lg:col-span-7">
           <div className="panel flex h-[calc(100vh-150px)] min-h-[560px] flex-col p-4">
@@ -31,8 +31,7 @@ export default function Technician() {
               {items.length === 0 && !running ? (
                 <div className="mt-6 text-center">
                   <p className="mb-4 text-sm text-muted">
-                    Ask anything about your car: a warning light, a noise, a code, whether it&apos;s safe to drive, or how to fix something.
-                    {connected ? " The technician can read live data and codes from the car while it answers." : " Connect the car for answers based on live data."}
+                    {connected ? "Ask about a light, a noise, a code or a repair." : "Connect your car for answers based on live data."}
                   </p>
                   <div className="flex flex-wrap justify-center gap-2">
                     {SUGGESTIONS.map((q) => (
@@ -71,7 +70,7 @@ export default function Technician() {
                   }
                 }}
                 rows={2}
-                placeholder="Describe a problem or ask a question… (Enter to send, Shift+Enter for a new line)"
+                placeholder="Ask a question…"
                 aria-label="Message the AI technician"
                 className="w-full resize-none rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-muted"
               />
@@ -88,7 +87,6 @@ export default function Technician() {
                 >
                   Run full diagnosis
                 </button>
-                <span className="text-[11px] text-muted">{connected ? "uses the text box as the complaint" : "needs a connected car"}</span>
                 {running ? (
                   <button type="button" onClick={stop} className="ml-auto rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2">
                     Stop
@@ -111,7 +109,7 @@ export default function Technician() {
               Simulator ground truth: <span className="text-ink">{SCENARIOS.find((s) => s.id === actualScenario)?.name}</span> ({actualScenario.replaceAll("_", " ")})
             </div>
           )}
-          <DtcPanel dtcs={dtcs} />
+          <DtcPanel dtcs={dtcs} vin={vehicle?.vin} />
         </section>
       </main>
     </div>

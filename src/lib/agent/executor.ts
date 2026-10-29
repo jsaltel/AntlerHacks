@@ -1,7 +1,8 @@
 import type { Elm327 } from "../obd/elm327";
 import type { VehicleModel, DriveMode } from "../obd/simulator";
 import { PID_BY_KEY } from "../obd/pids";
-import { lookupDtc } from "../kb/dtcs";
+import { DTC_KB, lookupDtc } from "../kb/dtcs";
+import { fetchDtcs } from "../kb/dtc-client";
 import type { ToolInputs, ToolName } from "./tools";
 import type { z } from "zod";
 
@@ -15,6 +16,8 @@ export interface MonitorSample {
 export interface ExecContext {
   /** Absent when chatting without a car connected; only knowledge-base tools work then. */
   elm?: Elm327;
+  /** The car's VIN, used to pick the right brand table for manufacturer-specific codes. */
+  vin?: string | null;
   /** Present in simulator mode: driver actions are applied to the vehicle model. */
   vehicle?: VehicleModel;
   requestDriverAction(action: DriveMode, instruction: string): Promise<boolean>;
@@ -85,7 +88,11 @@ export async function executeTool(name: ToolName, input: unknown, ctx: ExecConte
     case "read_dtcs": {
       const rep = await elm.readDtcs();
       ctx.onDtcs(rep);
-      const describe = (c: string) => ({ code: c, title: lookupDtc(c).title });
+      const found = await fetchDtcs([...rep.stored, ...rep.pending, ...rep.permanent], ctx.vin).catch(() => []);
+      const describe = (c: string) => {
+        const f = found.find((x) => x.code === c);
+        return { code: c, title: f?.title ?? lookupDtc(c).title, ...(f?.make && { make: f.make }) };
+      };
       return { stored: rep.stored.map(describe), pending: rep.pending.map(describe), permanent: rep.permanent.map(describe) };
     }
     case "read_freeze_frame": {
@@ -122,7 +129,14 @@ export async function executeTool(name: ToolName, input: unknown, ctx: ExecConte
       return { done: true, action };
     }
     case "lookup_dtc": {
-      return lookupDtc((input as { code: string }).code);
+      const code = (input as { code: string }).code.toUpperCase();
+      const [found] = await fetchDtcs([code], ctx.vin).catch(() => []);
+      const expert = DTC_KB[code];
+      return {
+        ...(found ?? lookupDtc(code)),
+        // Hand-written workshop notes, for the most common codes.
+        ...(expert && { severity: expert.severity, workshop_causes: expert.causes, discriminators: expert.discriminators, cost_usd: expert.costUsd }),
+      };
     }
     case "clear_dtcs": {
       const ok = await ctx.confirmClear((input as { reason: string }).reason);

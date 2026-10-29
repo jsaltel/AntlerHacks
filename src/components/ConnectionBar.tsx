@@ -1,30 +1,34 @@
 "use client";
 import { SCENARIOS, type ScenarioId } from "@/lib/obd/simulator";
+import { MODE_LABEL } from "./AppShell";
 import { useDiagnostics } from "./DiagnosticsProvider";
+import { PageHeader } from "./PageHeader";
 
-/** Adapter picker, simulator scenario and connect button, shared by the Diagnostics and AI Technician tabs. */
-export function ConnectionBar({ title }: { title: string }) {
+/** Page title plus adapter picker, demo-car scenario and connect button, shared by the vehicle pages. */
+export function ConnectionBar({ title, description }: { title: string; description?: string }) {
   const { mode, setMode, scenario, setScenario, status, connError, vehicle, support, connected, connect, disconnect } = useDiagnostics();
   return (
     <>
-      <header className="mb-5 flex flex-wrap items-center gap-4">
-        <h1 className="mr-2 text-sm font-medium text-ink-2">{title}</h1>
-        <div className="flex rounded-lg border border-line bg-surface-1 p-0.5 text-sm" role="tablist">
+      <PageHeader title={title} description={description} />
+      <div className="panel mb-5 flex flex-wrap items-center gap-3 px-3 py-2.5">
+        <div className="flex rounded-lg border border-line bg-page p-0.5 text-sm" role="tablist" aria-label="Connection type">
           {(
             [
-              ["simulator", "Simulator", true],
-              ["serial", "USB adapter", support.serial],
-              ["ble", "Bluetooth LE", support.ble],
+              ["simulator", true],
+              ["serial", support.serial],
+              ["ble", support.ble],
             ] as const
-          ).map(([m, label, ok]) => (
+          ).map(([m, ok]) => (
             <button
               key={m}
+              role="tab"
+              aria-selected={mode === m}
               disabled={!ok || status !== "disconnected"}
               onClick={() => setMode(m)}
               title={ok ? undefined : "Not supported in this browser. Use Chrome or Edge."}
               className={`rounded-md px-3 py-1 ${mode === m ? "bg-surface-2 text-ink" : "text-ink-2"} disabled:opacity-40`}
             >
-              {label}
+              {MODE_LABEL[m]}
             </button>
           ))}
         </div>
@@ -33,7 +37,8 @@ export function ConnectionBar({ title }: { title: string }) {
             value={scenario}
             disabled={status !== "disconnected"}
             onChange={(e) => setScenario(e.target.value as ScenarioId | "mystery")}
-            className="rounded-lg border border-line bg-surface-1 px-2 py-1.5 text-sm text-ink disabled:opacity-50"
+            className="max-w-full min-w-0 rounded-lg border border-line bg-surface-2 px-2 py-1.5 text-sm text-ink disabled:opacity-50"
+            aria-label="Demo car fault"
           >
             <option value="mystery">Mystery car (random fault)</option>
             {SCENARIOS.map((s) => (
@@ -52,17 +57,17 @@ export function ConnectionBar({ title }: { title: string }) {
             {status === "connecting" ? "Connecting…" : "Connect"}
           </button>
         )}
-        <div className="ml-auto flex items-center gap-2 text-xs text-ink-2">
-          <span className={`inline-block h-2 w-2 rounded-full ${connected ? "bg-good" : status === "connecting" ? "pulse bg-warning" : "bg-muted"}`} />
+        <div className="ml-auto flex min-w-0 items-center gap-2 text-xs text-ink-2">
+          <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${connected ? "bg-good" : status === "connecting" ? "pulse bg-warning" : "bg-muted"}`} />
           {connected && vehicle ? (
-            <span className="tabular">
+            <span className="tabular truncate">
               VIN {vehicle.vin ?? "n/a"} · {vehicle.protocol} · {vehicle.adapter} · {vehicle.transport}
             </span>
           ) : (
             <span>{status === "connecting" ? "Initializing adapter…" : "Not connected"}</span>
           )}
         </div>
-      </header>
+      </div>
 
       {connError && (
         <div className="mb-4 rounded-lg border border-critical/40 bg-critical/10 px-4 py-2 text-sm text-ink">

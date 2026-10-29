@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
 
 export const metadata: Metadata = {
   title: "Compatible adapters · Torque",
@@ -36,47 +37,38 @@ const INCOMPATIBLE: Row[] = [
 
 export default function Adapters() {
   return (
-    <div className="mx-auto max-w-[1100px] px-6 py-10">
-      <p className="mb-2 text-xs font-medium tracking-wide text-accent uppercase">Hardware</p>
-      <h1 className="mb-3 text-3xl font-semibold tracking-tight text-ink">Compatible OBD-II adapters</h1>
-      <p className="mb-8 max-w-[720px] text-base leading-relaxed text-ink-2">
-        Torque talks to the car through an <span className="text-ink">ELM327</span> (or STN) adapter over <span className="text-ink">USB serial</span> or{" "}
-        <span className="text-ink">Bluetooth LE</span> in Chrome or Edge. Classic Bluetooth, Wi-Fi, and app-locked dongles will not connect. This list matches that protocol; we have not soak-tested every model.
-      </p>
+    <div className="mx-auto max-w-[1100px] px-6 py-6">
+      <PageHeader title="Compatible adapters" description="Any ELM327 adapter over USB or Bluetooth LE, in Chrome or Edge." />
 
       <div className="mb-8 grid gap-3 sm:grid-cols-2">
         <div className="panel p-4">
           <h2 className="mb-1 text-sm font-medium text-ink">If you want wireless</h2>
           <p className="text-sm text-ink-2">
-            Buy an <span className="text-ink">OBDLink CX</span>, then use the Bluetooth LE tab.
+            Buy an <span className="text-ink">OBDLink CX</span>.
           </p>
         </div>
         <div className="panel p-4">
           <h2 className="mb-1 text-sm font-medium text-ink">If you want a cable</h2>
           <p className="text-sm text-ink-2">
-            Buy an <span className="text-ink">OBDLink EX</span>, then use the USB adapter tab.
+            Buy an <span className="text-ink">OBDLink EX</span>.
           </p>
         </div>
       </div>
 
-      <Section title="Bluetooth LE" hint="Diagnostics → Bluetooth LE → Connect">
+      <Section title="Bluetooth LE" >
         <AdapterTable rows={BLE} />
       </Section>
-      <Section title="USB" hint="Diagnostics → USB adapter → Connect">
+      <Section title="USB" >
         <AdapterTable rows={USB} />
       </Section>
       <Section title="Will not work">
         <AdapterTable rows={INCOMPATIBLE} incompatible />
       </Section>
 
-      <p className="text-xs leading-relaxed text-muted">
-        Need a car without hardware? Use the{" "}
+      <p className="text-xs text-muted">
+        No adapter?{" "}
         <Link href="/" className="text-accent hover:underline">
-          simulator
-        </Link>{" "}
-        from the home page, then open{" "}
-        <Link href="/diagnostics" className="text-accent hover:underline">
-          Diagnostics
+          Use the demo car
         </Link>
         .
       </p>

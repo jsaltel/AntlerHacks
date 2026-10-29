@@ -2,7 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { Elm327 } from "@/lib/obd/elm327";
 import { connectObd, type ConnectMode } from "@/lib/obd/connect";
-import { SCENARIOS, SimulatorTransport, type DriveMode, type ScenarioId } from "@/lib/obd/simulator";
+import { SCENARIOS, SimulatorTransport, type ScenarioId } from "@/lib/obd/simulator";
 import { SerialTransport } from "@/lib/obd/serial";
 import { BleTransport } from "@/lib/obd/ble";
 import { DASHBOARD_PIDS } from "@/lib/obd/pids";
@@ -10,7 +10,7 @@ import type { WireLogEntry } from "@/lib/obd/transport";
 import type Anthropic from "@anthropic-ai/sdk";
 import { diagnoseRequest, runConversation, type AgentEvent } from "@/lib/agent/runner";
 import type { Diagnosis, MonitorSample } from "@/lib/agent/executor";
-import { ConfirmClearModal, DriverActionModal, type TimelineItem } from "@/components/Panels";
+import type { TimelineItem } from "@/components/Panels";
 
 export type Status = "disconnected" | "connecting" | "connected";
 export type Dtcs = { stored: string[]; pending: string[]; permanent: string[] };
@@ -43,8 +43,6 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
   const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [testLabel, setTestLabel] = useState<string | null>(null);
-  const [driverPrompt, setDriverPrompt] = useState<{ action: DriveMode; instruction: string; resolve: (ok: boolean) => void } | null>(null);
-  const [clearPrompt, setClearPrompt] = useState<{ reason: string; resolve: (ok: boolean) => void } | null>(null);
   const [support, setSupport] = useState({ serial: false, ble: false });
 
   const elmRef = useRef<Elm327 | null>(null);
@@ -183,10 +181,12 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
         messages,
         {
           elm,
+          vin: vehicle?.vin,
           vehicle: sim,
           signal: ac.signal,
-          requestDriverAction: (action, instruction) => new Promise((resolve) => setDriverPrompt({ action, instruction, resolve })),
-          confirmClear: (reason) => new Promise((resolve) => setClearPrompt({ reason, resolve })),
+          // Hands-off: the demo car's virtual driver performs test conditions; a real car stays at idle.
+          requestDriverAction: async () => !!sim,
+          confirmClear: async () => false,
           onMonitorStart: (label) => {
             pollPaused.current = true;
             setTestLabel(label);
@@ -239,26 +239,6 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
   return (
     <DiagnosticsContext.Provider value={value}>
       {children}
-      {driverPrompt && (
-        <DriverActionModal
-          action={driverPrompt.action}
-          instruction={driverPrompt.instruction}
-          simulated={!!isSim}
-          onDone={(ok) => {
-            driverPrompt.resolve(ok);
-            setDriverPrompt(null);
-          }}
-        />
-      )}
-      {clearPrompt && (
-        <ConfirmClearModal
-          reason={clearPrompt.reason}
-          onDone={(ok) => {
-            clearPrompt.resolve(ok);
-            setClearPrompt(null);
-          }}
-        />
-      )}
     </DiagnosticsContext.Provider>
   );
 }

@@ -1,4 +1,5 @@
 "use client";
+import { PageHeader } from "@/components/PageHeader";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ENGINES, ENGINE_BY_ID, cloneTune, runDrag } from "@/lib/sim/engine";
 import { Workbench, buildPackage, type TunePackage } from "@/lib/tune/workbench";
@@ -155,8 +156,8 @@ export default function TunePage() {
 
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-5">
-      <header className="mb-5 flex flex-wrap items-center gap-3">
-        <h1 className="mr-2 text-sm font-medium text-ink-2">ECU tuning lab</h1>
+      <PageHeader title="Tuning lab" description="AI agents build and safety-test a performance map." />
+      <header className="panel mb-5 flex flex-wrap items-center gap-3 px-3 py-2.5">
         <select
           value={engineId}
           disabled={running}
@@ -322,7 +323,7 @@ export default function TunePage() {
                       </tbody>
                     </table>
                     <p className="mt-1 text-[11px] text-muted">
-                      Stock {spec.stockBoostPsi} psi. The stock turbo runs out of efficiency above about {spec.turboMaxPsi} psi.
+                      Stock {spec.stockBoostPsi} psi · turbo limit ~{spec.turboMaxPsi} psi
                     </p>
                   </div>
                 )}
@@ -437,7 +438,7 @@ export default function TunePage() {
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
               {segments.length === 0 && !running && (
                 <p className="mt-8 text-center text-sm text-muted">
-                  Pick the car and fuel, describe the goal and press Run tuning team. The lead tuner plans, the calibration engineer edits the maps, the simulation engineer stress-tests them and QA approves or sends them back (up to {MAX_ROUNDS} rounds). You can also edit the maps by hand.
+                  Pick a car and goal, then press Run tuning team.
                 </p>
               )}
               {segments.map((s, i) => (
@@ -490,7 +491,7 @@ export default function TunePage() {
             <h3 className="mb-1 text-sm font-medium text-ink">Tune package</h3>
             {outcome === "rejected" && <p className="mb-2 text-xs text-serious">QA did not approve this tune after {MAX_ROUNDS} rounds. It is exported as unreviewed.</p>}
             <p className="mb-3 text-xs text-muted">
-              Exports the calibration, results, changelog and QA notes as JSON, or sends it to the Simulator page. Emissions controls are untouched. Writing a tune to a real ECU needs a platform-specific flash tool; an ELM327 OBD adapter can read data but cannot flash maps.
+              Download as JSON or test it in the drive simulator. Flashing a real ECU needs a dedicated flash tool.
             </p>
             <div className="flex flex-wrap gap-2">
               <button

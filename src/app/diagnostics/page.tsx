@@ -6,10 +6,10 @@ import { useDiagnostics } from "@/components/DiagnosticsProvider";
 import { DiagnosisReport, DtcPanel, Gauges, WireLog } from "@/components/Panels";
 
 export default function Diagnostics() {
-  const { live, history, dtcs, wire, diagnosis, running, testLabel, connected } = useDiagnostics();
+  const { live, history, dtcs, wire, diagnosis, running, testLabel, vehicle } = useDiagnostics();
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-5">
-      <ConnectionBar title="Live diagnostics" />
+      <ConnectionBar title="Live data" />
       <main className="grid grid-cols-12 gap-5">
         <section className="col-span-12 space-y-4 lg:col-span-8">
           <div className="flex items-center justify-between">
@@ -53,15 +53,13 @@ export default function Diagnostics() {
 
         <section className="col-span-12 space-y-4 lg:col-span-4">
           <div className="panel flex items-center justify-between gap-3 p-4">
-            <div className="text-sm text-ink-2">
-              {running ? "The AI technician is diagnosing this car." : diagnosis ? "Diagnosis report ready." : connected ? "Want a full diagnosis with live tests?" : "Connect, then let the AI technician diagnose the car."}
-            </div>
-            <Link href="/technician" className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white">
-              {running ? "Watch" : diagnosis ? "Open" : "AI technician"} →
+            <div className="text-sm text-ink-2">{running ? "Diagnosis running" : diagnosis ? "Report ready" : "AI diagnosis"}</div>
+            <Link href="/" className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white">
+              {running ? "Watch" : diagnosis ? "Open report" : "Diagnose"} →
             </Link>
           </div>
           {diagnosis && <DiagnosisReport d={diagnosis} />}
-          <DtcPanel dtcs={dtcs} />
+          <DtcPanel dtcs={dtcs} vin={vehicle?.vin} />
           <WireLog log={wire} />
         </section>
       </main>

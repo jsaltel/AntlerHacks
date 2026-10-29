@@ -1,154 +1,210 @@
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { MODE_LABEL } from "@/components/AppShell";
 import { useDiagnostics } from "@/components/DiagnosticsProvider";
+import { Icon } from "@/components/Icons";
+import { DiagnosisReport, DtcPanel, Timeline } from "@/components/Panels";
+import type { ConnectMode } from "@/lib/obd/connect";
+import { SCENARIOS } from "@/lib/obd/simulator";
 
-const STEPS: { title: string; body: React.ReactNode }[] = [
-  {
-    title: "Get an OBD-II adapter",
-    body: (
-      <>
-        Any ELM327-compatible adapter works: a USB cable adapter or a Bluetooth LE one (for example OBDLink EX or CX). They cost about $20–80. Classic Bluetooth adapters that pair in system settings are not supported by browsers; use USB or Bluetooth LE.{" "}
-        <Link href="/adapters" className="text-accent hover:underline">
-          Compatible adapters
-        </Link>
-      </>
-    ),
-  },
-  {
-    title: "Plug it into the car",
-    body: (
-      <>
-        Find the OBD-II port under the dashboard on the driver&apos;s side, usually near the steering column (every car sold in the US since 1996 has one). Plug the adapter in and turn the ignition on. Start the engine if you want the AI to run live tests.
-      </>
-    ),
-  },
-  {
-    title: "Connect it to your laptop",
-    body: (
-      <>
-        Plug the USB adapter into your laptop, or switch the Bluetooth adapter on and keep the laptop within a few feet. Use <span className="text-ink">Chrome or Edge</span>: they are the browsers that can talk to USB and Bluetooth devices.
-      </>
-    ),
-  },
-  {
-    title: "Press Connect",
-    body: (
-      <>
-        Open Diagnostics, choose <span className="text-ink">USB adapter</span> or <span className="text-ink">Bluetooth LE</span>, press Connect and pick your adapter from the browser&apos;s list. You&apos;ll see the VIN, live gauges and any trouble codes.
-      </>
-    ),
-  },
-  {
-    title: "Ask the AI technician",
-    body: (
-      <>
-        Describe the problem in plain words (&quot;rough idle when cold&quot;, &quot;check engine light came on&quot;) or press Run full diagnosis. It reads the codes, asks you to rev the engine while it watches the sensors, and writes a repair plan with parts and costs.
-      </>
-    ),
-  },
-  {
-    title: "Tune and test (optional)",
-    body: (
-      <>
-        Let the AI tuning team build a performance calibration for your engine in the Tuning lab, then drive it in the Simulator under heat, bad fuel and altitude before trusting it.
-      </>
-    ),
-  },
-];
+const STEPS = ["Connect car", "AI diagnosis", "Report"];
 
-const FEATURES = [
-  { href: "/diagnostics", title: "Diagnostics", body: "Live gauges, fuel trims, O2 sensors, trouble codes and the raw adapter log." },
-  { href: "/technician", title: "AI Technician", body: "Chat with an AI mechanic that reads your car and runs real tests before it answers." },
-  { href: "/tune", title: "Tuning lab", body: "Four AI agents plan, calibrate, stress-test and safety-check an ECU tune." },
-  { href: "/sim", title: "Simulator", body: "Drive the car in real time with stock or tuned maps, faults and weather." },
-];
-
-export default function Home() {
-  const router = useRouter();
-  const { mode, status, connected, vehicle, support, connect } = useDiagnostics();
-
-  const trySimulator = async () => {
-    if (mode === "simulator" && status === "disconnected") await connect();
-    router.push(mode === "simulator" ? "/technician" : "/diagnostics");
-  };
+/** Guided flow: connect the car, let the AI technician diagnose it, read the report. */
+export default function Diagnose() {
+  const { connected, diagnosis } = useDiagnostics();
+  const reached = !connected ? 0 : diagnosis ? 2 : 1;
+  const [picked, setPicked] = useState<number | null>(null);
+  // Follow progress automatically whenever the car connects or a new report lands.
+  useEffect(() => setPicked(null), [reached, diagnosis]);
+  const step = picked ?? reached;
 
   return (
-    <div className="mx-auto max-w-[1100px] px-6 py-10">
-      <section className="mb-10">
-        <p className="mb-2 text-xs font-medium tracking-wide text-accent uppercase">Get started</p>
-        <h1 className="mb-3 text-3xl font-semibold tracking-tight text-ink md:text-4xl">Your car&apos;s AI mechanic, tuner and test track, in a browser tab.</h1>
-        <p className="mb-6 max-w-[680px] text-base leading-relaxed text-ink-2">
-          Plug a cheap OBD-II adapter into your car, connect it to your laptop, and Torque reads the engine, diagnoses problems like a master technician, and lets you build and test performance tunes in a simulator.
-        </p>
-        <div className="flex flex-wrap items-center gap-3">
-          <Link href="/diagnostics" className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white">
-            Connect my car
-          </Link>
-          <button onClick={trySimulator} disabled={status === "connecting"} className="rounded-lg border border-line px-4 py-2 text-sm text-ink hover:bg-surface-2 disabled:opacity-60">
-            {status === "connecting" ? "Starting…" : "No car? Try the simulator"}
-          </button>
-          <span className="flex items-center gap-2 text-xs text-ink-2">
-            <span className={`inline-block h-2 w-2 rounded-full ${connected ? "bg-good" : "bg-muted"}`} />
-            {connected && vehicle ? `Connected · VIN ${vehicle.vin ?? "n/a"}` : "Not connected"}
-          </span>
-        </div>
-      </section>
+    <div className="mx-auto max-w-[1100px] px-6 py-6">
+      <ol className="mb-8 flex items-center gap-2" aria-label="Progress">
+        {STEPS.map((s, i) => (
+          <li key={s} className="flex flex-1 items-center gap-2 last:flex-none">
+            <button
+              onClick={() => setPicked(i)}
+              disabled={i > reached}
+              aria-current={i === step ? "step" : undefined}
+              className="flex items-center gap-2 disabled:cursor-default"
+            >
+              <span
+                className={`tabular flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+                  i === step ? "bg-accent text-white" : i < reached ? "bg-good/20 text-good" : "bg-surface-2 text-muted"
+                }`}
+              >
+                {i < reached && i !== step ? "✓" : i + 1}
+              </span>
+              <span className={`hidden text-sm sm:inline ${i === step ? "font-medium text-ink" : i <= reached ? "text-ink-2" : "text-muted"}`}>{s}</span>
+            </button>
+            {i < STEPS.length - 1 && <span className={`h-px flex-1 ${i < reached ? "bg-good/50" : "bg-line"}`} />}
+          </li>
+        ))}
+      </ol>
 
-      <section className="mb-10">
-        <h2 className="mb-4 text-sm font-medium text-ink">Set up in six steps</h2>
-        <ol className="grid gap-3 md:grid-cols-2">
-          {STEPS.map((s, i) => {
-            const done = connected && i < 4;
-            return (
-              <li key={s.title} className="panel flex gap-4 p-4">
-                <span
-                  className={`tabular flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${done ? "bg-good/20 text-good" : "bg-accent/15 text-accent"}`}
-                  aria-label={done ? `Step ${i + 1} done` : `Step ${i + 1}`}
-                >
-                  {done ? "✓" : i + 1}
-                </span>
-                <div>
-                  <h3 className="mb-1 text-sm font-medium text-ink">{s.title}</h3>
-                  <p className="text-sm leading-relaxed text-ink-2">{s.body}</p>
-                  {i === 2 && (
-                    <p className="mt-2 text-xs text-muted">
-                      This browser: USB {support.serial ? <span className="text-good">supported</span> : <span className="text-serious">not supported</span>} · Bluetooth LE{" "}
-                      {support.ble ? <span className="text-good">supported</span> : <span className="text-serious">not supported</span>}
-                    </p>
-                  )}
-                  {i === 3 && (
-                    <Link href="/diagnostics" className="mt-2 inline-block text-xs text-accent hover:underline">
-                      Open Diagnostics →
-                    </Link>
-                  )}
-                  {i === 4 && (
-                    <Link href="/technician" className="mt-2 inline-block text-xs text-accent hover:underline">
-                      Open AI Technician →
-                    </Link>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ol>
-      </section>
-
-      <section className="mb-10">
-        <h2 className="mb-4 text-sm font-medium text-ink">What&apos;s inside</h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {FEATURES.map((f) => (
-            <Link key={f.href} href={f.href} className="panel block p-4 hover:border-accent/50">
-              <h3 className="mb-1 text-sm font-medium text-ink">{f.title} →</h3>
-              <p className="text-xs leading-relaxed text-ink-2">{f.body}</p>
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      <p className="text-xs leading-relaxed text-muted">
-        Safety: only run live tests while parked, or with a second person driving. Tunes are built and tested in simulation; Torque never changes emissions equipment, and an OBD adapter can read your car but cannot flash ECU maps.
-      </p>
+      {step === 0 && <ConnectStep />}
+      {step === 1 && <DiagnoseStep />}
+      {step === 2 && <ReportStep onRerun={() => setPicked(1)} />}
     </div>
+  );
+}
+
+function StepTitle({ n, title, sub }: { n: number; title: string; sub?: React.ReactNode }) {
+  return (
+    <div className="mb-5">
+      <p className="mb-1 text-[11px] font-medium tracking-wide text-accent uppercase">Step {n}</p>
+      <h1 className="text-2xl font-semibold tracking-tight text-ink">{title}</h1>
+      {sub && <p className="mt-1 text-sm text-ink-2">{sub}</p>}
+    </div>
+  );
+}
+
+const OPTIONS: { mode: ConnectMode; hint: string }[] = [
+  { mode: "simulator", hint: "No hardware needed" },
+  { mode: "serial", hint: "ELM327 cable" },
+  { mode: "ble", hint: "OBDLink CX and similar" },
+];
+
+function ConnectStep() {
+  const { mode, setMode, status, connError, support, connect } = useDiagnostics();
+  const ok: Record<ConnectMode, boolean> = { simulator: true, serial: support.serial, ble: support.ble };
+  return (
+    <section>
+      <StepTitle n={1} title="Connect your car" sub="Plug the adapter into the port under the dashboard and turn the ignition on. No adapter? Use the demo car." />
+      <div className="mb-5 grid gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Connection type">
+        {OPTIONS.map((o) => (
+          <button
+            key={o.mode}
+            role="radio"
+            aria-checked={mode === o.mode}
+            disabled={!ok[o.mode] || status !== "disconnected"}
+            onClick={() => setMode(o.mode)}
+            className={`panel p-4 text-left disabled:opacity-40 ${mode === o.mode ? "ring-2 ring-accent" : "hover:ring-1 hover:ring-accent/50"}`}
+          >
+            <div className="text-sm font-medium text-ink">{MODE_LABEL[o.mode]}</div>
+            <div className="text-xs text-ink-2">{ok[o.mode] ? o.hint : "Needs Chrome or Edge"}</div>
+          </button>
+        ))}
+      </div>
+
+      {connError && <div className="mb-4 rounded-lg border border-critical/40 bg-critical/10 px-4 py-2 text-sm text-ink">{connError}</div>}
+
+      <div className="flex flex-wrap items-center gap-4">
+        <button onClick={connect} disabled={status === "connecting"} className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white disabled:opacity-60">
+          {status === "connecting" ? "Connecting…" : "Connect"}
+        </button>
+        <Link href="/adapters" className="text-sm text-accent hover:underline">
+          Which adapter should I buy?
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+function DiagnoseStep() {
+  const { vehicle, isSim, dtcs, live, complaint, setComplaint, running, items, testLabel, run, stop } = useDiagnostics();
+  const codes = dtcs ? dtcs.stored.length + dtcs.pending.length + dtcs.permanent.length : null;
+  const facts = [
+    ["Codes", codes === null ? "–" : String(codes)],
+    ["RPM", live.rpm == null ? "–" : live.rpm.toFixed(0)],
+    ["Coolant", live.coolant == null ? "–" : `${live.coolant.toFixed(0)} °C`],
+    ["Battery", live.voltage == null ? "–" : `${live.voltage.toFixed(1)} V`],
+  ];
+  return (
+    <section>
+      <StepTitle n={2} title={running ? "Diagnosing…" : "Run the AI diagnosis"} sub={`Connected to ${isSim ? "the demo car" : `VIN ${vehicle?.vin ?? "n/a"}`}`} />
+
+      <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {facts.map(([k, v]) => (
+          <div key={k} className="panel px-3 py-2">
+            <div className="text-[11px] tracking-wide text-muted uppercase">{k}</div>
+            <div className="tabular text-lg font-semibold text-ink">{v}</div>
+          </div>
+        ))}
+      </div>
+
+      {running || items.length > 0 ? (
+        <div className="panel mb-4 p-4">
+          {testLabel && (
+            <span className="mb-3 flex w-fit items-center gap-1.5 rounded-full bg-accent/15 px-2.5 py-0.5 text-xs text-accent">
+              <span className="pulse inline-block h-1.5 w-1.5 rounded-full bg-accent" /> {testLabel}
+            </span>
+          )}
+          <div className="max-h-[420px] overflow-y-auto pr-1">
+            <Timeline items={items} running={running} />
+          </div>
+        </div>
+      ) : null}
+
+      {running ? (
+        <button onClick={stop} className="rounded-lg border border-line px-4 py-2 text-sm text-ink-2 hover:bg-surface-2">
+          Stop
+        </button>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            run();
+          }}
+        >
+          <label htmlFor="symptom" className="mb-1.5 block text-sm text-ink-2">
+            What are you noticing? <span className="text-muted">(optional)</span>
+          </label>
+          <textarea
+            id="symptom"
+            value={complaint}
+            onChange={(e) => setComplaint(e.target.value)}
+            rows={2}
+            placeholder="Rough idle, check engine light, strange noise…"
+            className="mb-3 w-full resize-none rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-muted"
+          />
+          <button type="submit" className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white">
+            <Icon name="wrench" size={16} /> Start diagnosis
+          </button>
+        </form>
+      )}
+    </section>
+  );
+}
+
+function ReportStep({ onRerun }: { onRerun: () => void }) {
+  const { diagnosis, dtcs, vehicle, isSim, scenario, actualScenario, run } = useDiagnostics();
+  if (!diagnosis) return null;
+  return (
+    <section>
+      <StepTitle n={3} title="Your report" />
+      <div className="mb-5 flex flex-wrap gap-2">
+        <Link href="/technician" className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white">
+          <Icon name="chat" size={16} /> Ask a follow-up
+        </Link>
+        <button
+          onClick={() => {
+            onRerun();
+            run();
+          }}
+          className="rounded-lg border border-line px-4 py-2 text-sm text-ink-2 hover:bg-surface-2"
+        >
+          Diagnose again
+        </button>
+        <Link href="/diagnostics" className="rounded-lg border border-line px-4 py-2 text-sm text-ink-2 hover:bg-surface-2">
+          Live data
+        </Link>
+      </div>
+      <div className="grid gap-5 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <DiagnosisReport d={diagnosis} />
+        </div>
+        <div className="space-y-4">
+          <DtcPanel dtcs={dtcs} vin={vehicle?.vin} />
+          {isSim && actualScenario && scenario === "mystery" && (
+            <div className="panel px-4 py-3 text-xs text-ink-2">
+              Actual demo fault: <span className="text-ink">{SCENARIOS.find((s) => s.id === actualScenario)?.name}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
