@@ -45,7 +45,7 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
   const [usage, setUsage] = useState<Usage | null>(null);
   const [testLabel, setTestLabel] = useState<string | null>(null);
   const [support, setSupport] = useState({ serial: false, ble: false });
-  // The report sheet opens on its own when a diagnosis lands.
+  // The printable report sheet, opened from the report's "View report sheet" button.
   const [sheetOpen, setSheetOpen] = useState(false);
   const [reportMeta, setReportMeta] = useState<{ complaint: string; at: Date } | null>(null);
   const complaintRef = useRef("");
@@ -199,7 +199,6 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
         onDiagnosis: (d) => {
           setDiagnosis(d);
           setReportMeta({ complaint: complaintRef.current, at: new Date() });
-          setSheetOpen(true);
         },
       };
       const onEvent = (e: AgentEvent) => {

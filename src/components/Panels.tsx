@@ -8,7 +8,10 @@ import type { WireLogEntry } from "@/lib/obd/transport";
 
 /* ---------- Live gauges ---------- */
 
-const GAUGES: { key: string; label: string; digits: number; warn?: (v: number) => boolean; crit?: (v: number) => boolean }[] = [
+// Engine-off battery readings are fine down to 11 V; the 13+ V charging check only applies while it runs.
+const engineOn = (all: Record<string, number | null>) => (all.rpm ?? 0) > 400;
+
+const GAUGES: { key: string; label: string; digits: number; warn?: (v: number, all: Record<string, number | null>) => boolean; crit?: (v: number, all: Record<string, number | null>) => boolean }[] = [
   { key: "rpm", label: "RPM", digits: 0 },
   { key: "speed", label: "Speed", digits: 0 },
   { key: "coolant", label: "Coolant", digits: 0, warn: (v) => v > 105, crit: (v) => v > 112 },
@@ -20,7 +23,7 @@ const GAUGES: { key: string; label: string; digits: number; warn?: (v: number) =
   { key: "o2b1s1", label: "O2 up", digits: 2 },
   { key: "o2b1s2", label: "O2 down", digits: 2 },
   { key: "map", label: "MAP", digits: 0 },
-  { key: "voltage", label: "Voltage", digits: 1, warn: (v) => v < 13 && v > 0, crit: (v) => v < 11.8 },
+  { key: "voltage", label: "Voltage", digits: 1, warn: (v, all) => engineOn(all) && v < 13 && v > 0, crit: (v, all) => (engineOn(all) ? v < 11.8 : v < 11) && v > 0 },
 ];
 
 export function Gauges({ values }: { values: Record<string, number | null> }) {
@@ -29,7 +32,7 @@ export function Gauges({ values }: { values: Record<string, number | null> }) {
       {GAUGES.map((g) => {
         const v = values[g.key];
         const def = PID_BY_KEY[g.key];
-        const state = v == null ? "none" : g.crit?.(v) ? "crit" : g.warn?.(v) ? "warn" : "ok";
+        const state = v == null ? "none" : g.crit?.(v, values) ? "crit" : g.warn?.(v, values) ? "warn" : "ok";
         return (
           <div key={g.key} className="panel px-3 py-2" title={def.name}>
             <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-muted">

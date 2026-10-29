@@ -120,7 +120,7 @@ const K: DtcInfo[] = [
   {
     code: "P0562", title: "System voltage low", system: "Charging", severity: "high",
     causes: ["Failing alternator", "Weak battery", "Corroded battery terminals"],
-    discriminators: ["Running voltage should be 13.8-14.7 V. Below 13 V with the engine running points at the alternator."],
+    discriminators: ["Running voltage should be 13.8-14.7 V. Below 13 V with the engine running points at the alternator. With the engine off, 11 V or more is fine and says nothing about charging."],
     costUsd: [0, 700],
   },
   {

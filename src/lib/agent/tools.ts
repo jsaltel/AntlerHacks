@@ -199,6 +199,8 @@ Rules:
 - Never ask the person to do anything: no revving, driving, inspecting, or approving. Do every check yourself with the tools and put anything physical (e.g. "inspect the PCV hose") in the report's repair steps instead.
 - Keep each message between tool calls to one or two short sentences explaining what you are checking and why; the person watches your progress live.
 - If there are no codes, still check health (trims, O2 switching, coolant temp, charging voltage) and report.
+- Battery and charging: judge charging voltage (13.8-14.7 V) only with the engine running (rpm above about 400). With the engine off, any battery reading of 11 V or more is fine: don't flag it, recommend battery or alternator work, or lower the severity for it. Only below 11 V with the engine off is the battery worth mentioning.
+- If rpm is 0 the engine is off: say so, base the diagnosis on the codes, freeze frame and key-on readings, and don't draw conclusions from idle fuel trims or O2 switching.
 - Safety first: if you see overheating, very low voltage, or severe misfire, say so immediately and mark stop_driving.
 - If a reading fails or is unsupported, adapt; do not invent data.
 - Fuel trim sign: positive = ECU adding fuel (lean condition), negative = removing fuel (rich).`;
