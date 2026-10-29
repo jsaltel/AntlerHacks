@@ -47,26 +47,15 @@ Browser (Chrome/Edge)                               Next.js server
 | `src/lib/agent/runner.ts`, `executor.ts` | Browser-side agent loop and tool execution |
 | `src/app/api/agent/route.ts` | Claude streaming endpoint (diagnostics) |
 | `src/lib/agent/stream.ts` | Shared NDJSON streaming of one Claude turn |
-| `src/lib/sim/engine.ts` | Engine + vehicle physics: VE, turbo spool, intake heat, injectors, spark vs knock limit, EGT, dyno, drag strip |
-| `src/lib/tune/team.ts` | The four tuning agents: roles, prompts and tool contracts |
-| `src/lib/tune/workbench.ts` | Tool execution on the simulated engine, the QA safety gate and the tune package |
-| `src/lib/tune/pipeline.ts` | Plan → calibrate → simulate → QA loop (up to 3 rounds) |
-| `src/app/tune/page.tsx`, `src/app/sim/page.tsx` | Tuning lab and car simulator pages |
-| `src/components/SketchfabCar.tsx` | Embedded Sketchfab 3D cars: camera views and paint via the Viewer API |
 
 ## Pages
 
-* **Home** (`/`): a get-started guide: get an adapter, plug it in, connect it to the laptop, press Connect, ask the technician. It also has a one-click simulator demo.
-* **Diagnostics** (`/diagnostics`): connection, live gauges and charts, trouble codes and the wire log.
-* **AI Technician** (`/technician`): a chat with the AI technician above. Type questions or problems (it works without a car, too), or run a full diagnosis. Both tabs share one adapter connection, so a diagnosis keeps running when you switch tabs. The report includes, for each root cause, step-by-step repair instructions, a parts list with prices, tools and labor hours.
-* **Tuning** (`/tune`): pick the car and fuel, describe the goal, and a team of four Claude agents develops an ECU calibration on the simulated engine:
-  * **Lead tuner** scans the engine, dynos stock in several conditions and writes a plan with hard safety limits.
-  * **Calibration engineer** edits the spark, AFR and boost maps and rev limit, measuring each change on the dyno.
-  * **Simulation engineer** stress-tests the candidate (hot day, bad fuel, altitude, track heat soak, drag strip).
-  * **QA & safety reviewer** runs the automated gate and approves the tune or sends it back with numeric fixes.
-  
-  You can also edit the maps by hand. Approved tunes export as a JSON package or go to the simulator. Tunes stay virtual: emissions controls are never touched, and flashing a real ECU needs a platform-specific flash tool (an ELM327 can't write maps).
-* **Simulator** (`/sim`): five cars (Civic Si, GTI, Mustang GT, Alfa Romeo Giulia Quadrifoglio, Jeep Wrangler Rubicon JK). The Giulia and Wrangler show an interactive 3D model embedded from Sketchfab (by MaximePages and ROH3D) through the Viewer API, with camera views and, for the Giulia, paint colors. The models are the creators' work and are embedded, not copied into this repo. Drive the car in real time (throttle slider, arrow keys, auto launch or cruise) with stock or saved tunes, change conditions, inject faults (clogged injectors, boost leak, heat soak, bad fuel) and compare stock vs tune across a test matrix.
+* **Diagnose** (`/`): three steps.
+  1. **Connect**: Demo car, USB adapter or Bluetooth LE.
+  2. **AI diagnosis**: optionally describe the problem, then watch the agent read codes and run tests.
+  3. **Report**: ranked root causes with next steps, step-by-step repair instructions, a parts list with prices, tools and labor hours, plus the trouble codes looked up for the car's brand.
+* **AI technician** (`/technician`): chat with the technician (it works without a car, too). It shares the adapter connection with the other pages, so a diagnosis keeps running when you switch.
+* **Live data** (`/diagnostics`): live gauges and charts, trouble codes and the raw adapter log.
 
 ## Run it
 
@@ -83,7 +72,6 @@ Tests:
 
 ```bash
 npx tsx scripts/sim-smoke.ts                 # protocol stack against every simulator scenario
-npx tsx scripts/engine-check.ts              # stock dyno, drag and safety results for every car and condition
 node scripts/build-dtc-db.mjs                # refresh the trouble-code database and docs/DTC_CODES.md
 npm run build && npx next start -p 3100 &
 node scripts/e2e-mock.mjs out.png            # full UI + tool loop with a scripted model (no API key needed)

@@ -17,14 +17,6 @@ const NAV: { group: string | null; items: NavItem[] }[] = [
       { href: "/diagnostics", label: "Live data", icon: "activity" },
     ],
   },
-  {
-    group: "Performance",
-    items: [
-      { href: "/tune", label: "Tuning lab", icon: "sliders" },
-      { href: "/sim", label: "Drive simulator", icon: "gauge" },
-    ],
-  },
-  { group: "Help", items: [{ href: "/adapters", label: "Adapters", icon: "plug" }] },
 ];
 
 export const MODE_LABEL: Record<ConnectMode, string> = { simulator: "Demo car", serial: "USB adapter", ble: "Bluetooth LE" };

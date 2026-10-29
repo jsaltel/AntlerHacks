@@ -95,9 +95,6 @@ function ConnectStep() {
         <button onClick={connect} disabled={status === "connecting"} className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white disabled:opacity-60">
           {status === "connecting" ? "Connecting…" : "Connect"}
         </button>
-        <Link href="/adapters" className="text-sm text-accent hover:underline">
-          Which adapter should I buy?
-        </Link>
       </div>
     </section>
   );

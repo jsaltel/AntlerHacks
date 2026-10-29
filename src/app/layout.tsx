@@ -8,8 +8,8 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Torque · AI diagnostics & tuning",
-  description: "Plug in an OBD-II adapter for AI diagnostics, build simulated ECU tunes with an agent team, and test them in a car simulator.",
+  title: "Torque · AI car diagnostics",
+  description: "Plug in an OBD-II adapter and an AI technician diagnoses your car.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
