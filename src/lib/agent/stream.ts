@@ -8,6 +8,8 @@ interface StreamArgs {
   tools: Anthropic.Beta.BetaToolUnion[];
   messages: Anthropic.Beta.BetaMessageParam[];
   effort?: "low" | "medium" | "high";
+  /** Opus fast mode: same model, up to ~2.5x faster output at premium pricing. Falls back to standard speed if it is rejected or rate limited. */
+  fast?: boolean;
 }
 
 /**
@@ -15,15 +17,16 @@ interface StreamArgs {
  * agent loop (tools run next to the adapter or the simulator), so each request
  * is a single model step.
  */
-export function streamTurn({ system, tools, messages, effort = "high" }: StreamArgs): Response {
+export function streamTurn({ system, tools, messages, effort = "high", fast = false }: StreamArgs): Response {
   const body = new ReadableStream({
     async start(controller) {
       const send = (obj: unknown) => controller.enqueue(new TextEncoder().encode(JSON.stringify(obj) + "\n"));
-      try {
-        const stream = client.beta.messages.stream({
+      const open = (speed: boolean) =>
+        client.beta.messages.stream({
           model: MODEL,
           max_tokens: 32000,
-          betas: ["server-side-fallback-2026-07-01"],
+          betas: speed ? ["server-side-fallback-2026-07-01", "fast-mode-2026-02-01"] : ["server-side-fallback-2026-07-01"],
+          ...(speed && { speed: "fast" as const }),
           fallbacks: "default",
           thinking: { type: "adaptive", display: "summarized" },
           output_config: { effort },
@@ -32,6 +35,17 @@ export function streamTurn({ system, tools, messages, effort = "high" }: StreamA
           tools,
           messages,
         });
+      try {
+        let stream = open(fast);
+        if (fast) {
+          // Fast mode has its own rate limit; if it is refused before any output, retry at standard speed.
+          try {
+            await stream.withResponse();
+          } catch (err) {
+            if (!(err instanceof Anthropic.RateLimitError || err instanceof Anthropic.BadRequestError)) throw err;
+            stream = open(false);
+          }
+        }
         for await (const ev of stream) {
           if (ev.type === "content_block_start") {
             send({ type: "block_start", index: ev.index, block: ev.content_block.type, name: ev.content_block.type === "tool_use" ? ev.content_block.name : undefined });

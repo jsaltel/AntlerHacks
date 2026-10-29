@@ -6,7 +6,7 @@ import { useDiagnostics } from "@/components/DiagnosticsProvider";
 import { DiagnosisReport, DtcPanel, Gauges, WireLog } from "@/components/Panels";
 
 export default function Diagnostics() {
-  const { live, history, dtcs, wire, diagnosis, running, testLabel, vehicle } = useDiagnostics();
+  const { live, history, dtcs, wire, diagnosis, running, testLabel, vehicle, openSheet } = useDiagnostics();
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-5">
       <ConnectionBar title="Live data" />
@@ -58,7 +58,7 @@ export default function Diagnostics() {
               {running ? "Watch" : diagnosis ? "Open report" : "Diagnose"} →
             </Link>
           </div>
-          {diagnosis && <DiagnosisReport d={diagnosis} />}
+          {diagnosis && <DiagnosisReport d={diagnosis} onOpen={openSheet} />}
           <DtcPanel dtcs={dtcs} vin={vehicle?.vin} />
           <WireLog log={wire} />
         </section>

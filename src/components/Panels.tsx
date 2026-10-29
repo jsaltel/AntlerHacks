@@ -220,7 +220,7 @@ const SEVERITY: Record<Diagnosis["severity"], { label: string; icon: string; col
   stop_driving: { label: "Stop driving", icon: "●", color: "var(--critical)" },
 };
 
-export function DiagnosisReport({ d }: { d: Diagnosis }) {
+export function DiagnosisReport({ d, onOpen }: { d: Diagnosis; onOpen?: () => void }) {
   const sev = SEVERITY[d.severity];
   return (
     <div className="panel p-5" id="report">
@@ -229,9 +229,11 @@ export function DiagnosisReport({ d }: { d: Diagnosis }) {
           {sev.icon} {sev.label}
         </span>
         <span className="text-xs text-ink-2">{d.safe_to_drive ? "Safe to drive" : "Not safe to drive"}</span>
-        <button onClick={() => window.print()} className="ml-auto text-xs text-accent hover:underline">
-          Save PDF
-        </button>
+        {onOpen && (
+          <button onClick={onOpen} className="ml-auto text-xs text-accent hover:underline">
+            Open report sheet
+          </button>
+        )}
       </div>
       <p className="mb-4 text-sm leading-relaxed text-ink">{d.summary}</p>
       <h3 className="mb-2 text-xs font-medium tracking-wide text-muted uppercase">Root causes</h3>

@@ -125,7 +125,7 @@ export async function executeTool(name: ToolName, input: unknown, ctx: ExecConte
       if (!ok) return { done: false, note: "The person declined or could not perform this action. Continue without it." };
       ctx.vehicle?.setMode(action);
       // Give the engine and fuel control a moment to settle before measuring.
-      await sleep(action === "snap_throttle" ? 300 : 2500, ctx.signal);
+      await sleep(action === "snap_throttle" ? 300 : 1200, ctx.signal);
       return { done: true, action };
     }
     case "lookup_dtc": {

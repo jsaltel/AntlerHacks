@@ -1,4 +1,5 @@
 "use client";
+import { DialCluster } from "@/components/Dial";
 import { SCENARIOS } from "@/lib/obd/simulator";
 import { ConnectionBar } from "@/components/ConnectionBar";
 import { useDiagnostics } from "@/components/DiagnosticsProvider";
@@ -7,7 +8,7 @@ import { DiagnosisReport, DtcPanel, Gauges, Timeline } from "@/components/Panels
 const SUGGESTIONS = ["What do my trouble codes mean?", "Is my car safe to drive right now?", "My engine idles rough when cold. What could it be?", "What does P0420 mean and how much does it cost to fix?"];
 
 export default function Technician() {
-  const { live, dtcs, vehicle, complaint, setComplaint, running, items, diagnosis, usage, cost, testLabel, connected, isSim, scenario, actualScenario, run, send, newChat, stop } = useDiagnostics();
+  const { live, dtcs, vehicle, complaint, setComplaint, running, items, diagnosis, usage, cost, testLabel, connected, isSim, scenario, actualScenario, run, send, newChat, stop, openSheet } = useDiagnostics();
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-5">
       <ConnectionBar title="AI technician" description="Ask anything about your car." />
@@ -102,8 +103,9 @@ export default function Technician() {
         </section>
 
         <section className="col-span-12 space-y-4 lg:col-span-5">
+          <DialCluster rpm={live.rpm} speed={live.speed} />
           <Gauges values={live} />
-          {diagnosis && <DiagnosisReport d={diagnosis} />}
+          {diagnosis && <DiagnosisReport d={diagnosis} onOpen={openSheet} />}
           {diagnosis && isSim && actualScenario && scenario === "mystery" && (
             <div className="panel px-4 py-3 text-xs text-ink-2">
               Simulator ground truth: <span className="text-ink">{SCENARIOS.find((s) => s.id === actualScenario)?.name}</span> ({actualScenario.replaceAll("_", " ")})

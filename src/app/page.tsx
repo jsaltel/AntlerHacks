@@ -167,13 +167,16 @@ function DiagnoseStep() {
 }
 
 function ReportStep({ onRerun }: { onRerun: () => void }) {
-  const { diagnosis, dtcs, vehicle, isSim, scenario, actualScenario, run } = useDiagnostics();
+  const { diagnosis, dtcs, vehicle, isSim, scenario, actualScenario, run, openSheet } = useDiagnostics();
   if (!diagnosis) return null;
   return (
     <section>
       <StepTitle n={3} title="Your report" />
       <div className="mb-5 flex flex-wrap gap-2">
-        <Link href="/technician" className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white">
+        <button onClick={openSheet} className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white">
+          <Icon name="book" size={16} /> View report sheet
+        </button>
+        <Link href="/technician" className="flex items-center gap-2 rounded-lg border border-line px-4 py-2 text-sm text-ink-2 hover:bg-surface-2">
           <Icon name="chat" size={16} /> Ask a follow-up
         </Link>
         <button
@@ -191,7 +194,7 @@ function ReportStep({ onRerun }: { onRerun: () => void }) {
       </div>
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <DiagnosisReport d={diagnosis} />
+          <DiagnosisReport d={diagnosis} onOpen={openSheet} />
         </div>
         <div className="space-y-4">
           <DtcPanel dtcs={dtcs} vin={vehicle?.vin} />

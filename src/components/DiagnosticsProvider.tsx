@@ -8,9 +8,10 @@ import { BleTransport } from "@/lib/obd/ble";
 import { DASHBOARD_PIDS } from "@/lib/obd/pids";
 import type { WireLogEntry } from "@/lib/obd/transport";
 import type Anthropic from "@anthropic-ai/sdk";
-import { diagnoseRequest, runConversation, type AgentEvent } from "@/lib/agent/runner";
+import { runConversation, runQuickDiagnosis, type AgentEvent } from "@/lib/agent/runner";
 import type { Diagnosis, MonitorSample } from "@/lib/agent/executor";
 import type { TimelineItem } from "@/components/Panels";
+import { ReportSheet } from "@/components/ReportSheet";
 
 export type Status = "disconnected" | "connecting" | "connected";
 export type Dtcs = { stored: string[]; pending: string[]; permanent: string[] };
@@ -44,6 +45,10 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
   const [usage, setUsage] = useState<Usage | null>(null);
   const [testLabel, setTestLabel] = useState<string | null>(null);
   const [support, setSupport] = useState({ serial: false, ble: false });
+  // The report sheet opens on its own when a diagnosis lands.
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [reportMeta, setReportMeta] = useState<{ complaint: string; at: Date } | null>(null);
+  const complaintRef = useRef("");
 
   const elmRef = useRef<Elm327 | null>(null);
   const historyRef = useRef<MonitorSample[]>([]);
@@ -165,8 +170,8 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
   }, []);
 
   /** Sends one chat message to the technician; the conversation continues across messages. */
-  const send = async (text: string, shown = text) => {
-    if (!text.trim() || running) return;
+  const send = async (text: string, shown = text, quick = false) => {
+    if ((!quick && !text.trim()) || running) return;
     const elm = elmRef.current ?? undefined;
     const ac = new AbortController();
     abortRef.current = ac;
@@ -174,35 +179,39 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
     setItems((prev) => [...prev, { id: ++idRef.current, kind: "user", text: shown }]);
     const messages = messagesRef.current;
     const before = messages.length;
-    messages.push({ role: "user", content: elm ? text : `${text}\n\n[No vehicle is connected right now.]` });
+    if (!quick) messages.push({ role: "user", content: elm ? text : `${text}\n\n[No vehicle is connected right now.]` });
     const sim = elm?.transport instanceof SimulatorTransport ? elm.transport.vehicle : undefined;
     try {
-      await runConversation(
-        messages,
-        {
-          elm,
-          vin: vehicle?.vin,
-          vehicle: sim,
-          signal: ac.signal,
-          // Hands-off: the demo car's virtual driver performs test conditions; a real car stays at idle.
-          requestDriverAction: async () => !!sim,
-          confirmClear: async () => false,
-          onMonitorStart: (label) => {
-            pollPaused.current = true;
-            setTestLabel(label);
-          },
-          onMonitorSample: pushSample,
-          onDtcs: setDtcs,
-          onDiagnosis: setDiagnosis,
+      const execCtx: Parameters<typeof runConversation>[1] = {
+        elm,
+        vin: vehicle?.vin,
+        vehicle: sim,
+        signal: ac.signal,
+        // Hands-off: the demo car's virtual driver performs test conditions; a real car stays at idle.
+        requestDriverAction: async () => !!sim,
+        confirmClear: async () => false,
+        onMonitorStart: (label) => {
+          pollPaused.current = true;
+          setTestLabel(label);
         },
-        (e) => {
-          if (e.type === "tool_result") {
-            pollPaused.current = false;
-            setTestLabel(null);
-          }
-          applyEvent(e);
+        onMonitorSample: pushSample,
+        onDtcs: setDtcs,
+        onDiagnosis: (d) => {
+          setDiagnosis(d);
+          setReportMeta({ complaint: complaintRef.current, at: new Date() });
+          setSheetOpen(true);
         },
-      );
+      };
+      const onEvent = (e: AgentEvent) => {
+        if (e.type === "tool_result") {
+          pollPaused.current = false;
+          setTestLabel(null);
+        }
+        applyEvent(e);
+      };
+      // A full diagnosis collects every measurement in one pass and asks for the report once.
+      if (quick) await runQuickDiagnosis(messages, text, execCtx, onEvent);
+      else await runConversation(messages, execCtx, onEvent);
     } catch (e) {
       // Drop the unfinished exchange so the transcript never ends in an unanswered tool call.
       messages.length = before;
@@ -216,7 +225,10 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
     }
   };
 
-  const run = () => send(diagnoseRequest(complaint), `Run a full diagnosis${complaint ? `: ${complaint}` : ""}`);
+  const run = () => {
+    complaintRef.current = complaint;
+    return send(complaint, `Run a full diagnosis${complaint ? `: ${complaint}` : ""}`, true);
+  };
 
   const newChat = () => {
     abortRef.current?.abort();
@@ -233,12 +245,13 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
   const value = {
     mode, setMode, scenario, setScenario, actualScenario, status, connError, vehicle, live, history, dtcs, wire,
     complaint, setComplaint, running, items, diagnosis, usage, testLabel, support, cost, connected, isSim: !!isSim,
-    connect, disconnect, run, send, newChat, stop: () => abortRef.current?.abort(),
+    connect, disconnect, run, send, newChat, reportMeta, openSheet: () => setSheetOpen(true), stop: () => abortRef.current?.abort(),
   };
 
   return (
     <DiagnosticsContext.Provider value={value}>
       {children}
+      {sheetOpen && diagnosis && <ReportSheet onClose={() => setSheetOpen(false)} />}
     </DiagnosticsContext.Provider>
   );
 }
@@ -261,6 +274,9 @@ type DiagnosticsState = {
   running: boolean;
   items: TimelineItem[];
   diagnosis: Diagnosis | null;
+  /** When the latest report was made and the concern it was run for. */
+  reportMeta: { complaint: string; at: Date } | null;
+  openSheet: () => void;
   usage: Usage | null;
   testLabel: string | null;
   support: { serial: boolean; ble: boolean };
