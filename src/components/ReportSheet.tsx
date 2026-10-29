@@ -2,7 +2,7 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import type { Diagnosis } from "@/lib/agent/executor";
-import { useDtcLookups } from "@/lib/kb/dtc-client";
+import { useDtcExplanation, useDtcLookups, type DtcLookup } from "@/lib/kb/dtc-client";
 import { brandFromVin, brandLabel } from "@/lib/kb/vin";
 import { useDiagnostics } from "./DiagnosticsProvider";
 
@@ -28,6 +28,26 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 className="mb-3 border-b border-[#e5e5e5] pb-1.5 text-[11px] font-semibold tracking-[0.12em] text-[#6b6b6b] uppercase">{title}</h2>
       {children}
     </section>
+  );
+}
+
+/** A code with its database name and the technician's plain-language meaning and fix cost for this make. */
+function CodeRow({ code, kind, db, vin }: { code: string; kind: string; db?: DtcLookup; vin?: string | null }) {
+  const { data: x } = useDtcExplanation(code, vin);
+  const title = db && db.source !== "unknown" ? db.title : (x?.system ?? db?.title ?? "…");
+  return (
+    <tr className="border-t border-[#efefef] align-top">
+      <td className="py-2 font-mono font-semibold">{code}</td>
+      <td className="py-2 pr-4">
+        <div>{title}</div>
+        {x && (
+          <div className="mt-0.5 text-[12px] leading-relaxed text-[#5a5a5a]">
+            {x.meaning} <span className="tabular whitespace-nowrap text-[#8a8a8a]">Typical fix {usd(x.est_cost_usd.low)}–{usd(x.est_cost_usd.high)}.</span>
+          </div>
+        )}
+      </td>
+      <td className="py-2 text-right text-[#6b6b6b]">{kind}</td>
+    </tr>
   );
 }
 
@@ -142,11 +162,7 @@ export function ReportSheet({ onClose }: { onClose: () => void }) {
                 </thead>
                 <tbody>
                   {rows.map(([c, kind]) => (
-                    <tr key={c + kind} className="border-t border-[#efefef]">
-                      <td className="py-2 font-mono font-semibold">{c}</td>
-                      <td className="py-2">{found[c]?.title ?? "…"}</td>
-                      <td className="py-2 text-right text-[#6b6b6b]">{kind}</td>
-                    </tr>
+                    <CodeRow key={c + kind} code={c} kind={kind} db={found[c]} vin={vehicle?.vin} />
                   ))}
                 </tbody>
               </table>

@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PID_BY_KEY } from "@/lib/obd/pids";
 import { lookupDtc } from "@/lib/kb/dtcs";
-import { useDtcLookups } from "@/lib/kb/dtc-client";
+import { useDtcExplanation, useDtcLookups, type DtcLookup } from "@/lib/kb/dtc-client";
 import type { Diagnosis } from "@/lib/agent/executor";
 import type { WireLogEntry } from "@/lib/obd/transport";
 
@@ -58,38 +58,82 @@ export function DtcPanel({ dtcs, vin }: { dtcs: { stored: string[]; pending: str
       <h2 className="mb-2 text-sm font-medium text-ink">Trouble codes</h2>
       {!dtcs && <p className="text-sm text-muted">Not read yet.</p>}
       {dtcs && rows.length === 0 && <p className="text-sm text-good">✓ No codes stored or pending.</p>}
-      <ul className="space-y-2">
-        {rows.map(([c, kind]) => {
-          const info = lookupDtc(c);
-          const db = found[c];
-          return (
-            <li key={c + kind} className="flex items-start gap-3">
-              <span className="rounded-md bg-surface-2 px-2 py-0.5 font-mono text-sm text-ink">{c}</span>
-              <div className="min-w-0">
-                <div className="text-sm text-ink" title={db?.description}>
-                  {db?.title ?? info.title}
-                </div>
-                {db?.candidates && (
-                  <ul className="mt-0.5 text-xs text-ink-2">
-                    {db.candidates.slice(0, 3).map((m) => (
-                      <li key={m.meaning}>
-                        {m.meaning} <span className="text-muted">({m.makes.join(", ")})</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <div className="text-xs text-muted">
-                  {kind} · {db?.system ?? info.system}
-                  {db?.source === "manufacturer" && db.make ? ` · ${db.make} code` : ""}
-                  {db?.source === "unattributed" ? " · likely meaning" : ""}
-                  {"severity" in info ? ` · ${info.severity}` : ""}
-                </div>
-              </div>
-            </li>
-          );
-        })}
+      <ul className="space-y-3">
+        {rows.map(([c, kind], i) => (
+          <DtcRow key={c + kind} code={c} kind={kind} db={found[c]} vin={vin} open={i === 0} />
+        ))}
       </ul>
     </div>
+  );
+}
+
+const SEVERITY_TEXT: Record<string, string> = { low: "text-good", moderate: "text-warning", high: "text-serious", critical: "text-critical" };
+
+/** One code: the database meaning, plus the AI technician's explanation and fix for this make. */
+function DtcRow({ code, kind, db, vin, open }: { code: string; kind: string; db?: DtcLookup; vin?: string | null; open: boolean }) {
+  const info = lookupDtc(code);
+  const ai = useDtcExplanation(code, vin);
+  const x = ai.data;
+  // A code the database can't name gets its name from the technician instead.
+  const title = db && db.source !== "unknown" ? db.title : (x?.system ?? db?.title ?? info.title);
+  return (
+    <li className="rounded-lg border border-line bg-surface-2/50">
+      <details open={open} className="group">
+        <summary className="flex cursor-pointer list-none items-start gap-3 p-3">
+          <span className="rounded-md bg-surface-2 px-2 py-0.5 font-mono text-sm text-ink">{code}</span>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm text-ink">{title}</div>
+            <div className="text-xs text-muted">
+              {kind} · {db?.system ?? info.system}
+              {db?.make ? ` · ${db.make} code` : ""}
+              {x && (
+                <>
+                  {" · "}
+                  <span className={SEVERITY_TEXT[x.severity]}>{x.severity}</span>
+                  {` · ${x.safe_to_drive ? "safe to drive" : "not safe to drive"}`}
+                </>
+              )}
+            </div>
+            {x && <p className="mt-1 text-xs leading-relaxed text-ink-2">{x.meaning}</p>}
+            {ai.loading && (
+              <p className="mt-1 flex items-center gap-1.5 text-xs text-muted">
+                <span className="pulse inline-block h-1.5 w-1.5 rounded-full bg-accent" /> AI technician is looking this up…
+              </p>
+            )}
+            {ai.error && <p className="mt-1 text-xs text-muted">Couldn&apos;t get an explanation: {ai.error}</p>}
+          </div>
+          {x && <span className="mt-0.5 text-xs text-muted transition-transform group-open:rotate-90">›</span>}
+        </summary>
+        {x && (
+          <div className="space-y-3 border-t border-line px-3 py-3 text-xs text-ink-2">
+            <p className="text-ink">{x.driving_advice}</p>
+            <div>
+              <div className="mb-1 font-medium text-muted">Likely causes</div>
+              <ul className="space-y-0.5">
+                {x.likely_causes.map((c) => (
+                  <li key={c.cause} className="flex gap-2">
+                    <span className={`w-12 shrink-0 ${c.likelihood === "high" ? "text-serious" : c.likelihood === "medium" ? "text-warning" : "text-muted"}`}>{c.likelihood}</span>
+                    {c.cause}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <div className="mb-1 font-medium text-muted">How to fix</div>
+              <ol className="list-decimal space-y-0.5 pl-4">
+                {x.how_to_fix.map((s, i) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ol>
+            </div>
+            <div className="tabular text-muted">
+              {x.diy === "shop" ? "Shop job" : `DIY: ${x.diy}`} · ${x.est_cost_usd.low}–${x.est_cost_usd.high}
+            </div>
+            {x.note && <p className="text-muted italic">{x.note}</p>}
+          </div>
+        )}
+      </details>
+    </li>
   );
 }
 

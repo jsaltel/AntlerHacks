@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-const client = new Anthropic();
+export const client = new Anthropic();
 export const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-opus-5-5";
 
 interface StreamArgs {

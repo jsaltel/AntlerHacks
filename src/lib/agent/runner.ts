@@ -1,6 +1,8 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { ToolInputs, type ToolName } from "./tools";
 import { executeTool, type ExecContext } from "./executor";
+import { fetchDtcExplanation } from "../kb/dtc-client";
+import { brandFromVin, brandLabel } from "../kb/vin";
 
 type Msg = Anthropic.Beta.BetaMessageParam;
 
@@ -149,6 +151,8 @@ export async function runQuickDiagnosis(messages: Msg[], complaint: string, ctx:
   };
 
   const evidence: Record<string, unknown> = {};
+  const brand = brandFromVin(ctx.vin);
+  evidence.make = ctx.vehicle ? "Demo car (simulated)" : brand ? brandLabel(brand) : "unknown";
   evidence.vehicle = await call("get_vehicle_info", {});
   const dtcs = (await call("read_dtcs", {})) as { stored?: { code: string }[]; pending?: { code: string }[]; permanent?: { code: string }[] };
   evidence.trouble_codes = dtcs;
@@ -156,6 +160,14 @@ export async function runQuickDiagnosis(messages: Msg[], complaint: string, ctx:
   const codes = [...new Set([...(dtcs.stored ?? []), ...(dtcs.pending ?? []), ...(dtcs.permanent ?? [])].map((c) => c.code))];
   // Knowledge-base lookups are network calls, so they run while the adapter samples.
   const lookups = Promise.all(codes.map((code) => call("lookup_dtc", { code })));
+  // Make-specific explanations from the technician model, capped so they never slow the report down.
+  const explanations = Promise.all(
+    codes.map((code) =>
+      Promise.race([fetchDtcExplanation(code, ctx.vin), new Promise<null>((r) => setTimeout(() => r(null), 9000))])
+        .then((x) => (x ? { code, ...x } : null))
+        .catch(() => null),
+    ),
+  );
   evidence.snapshot = await call("read_live_data", { pids: ["coolant", "voltage", "iat", "load", "throttle", "runtime"] });
   evidence.idle = await call("monitor_pids", { pids: FUEL_PIDS, duration_s: 3, label: "warm idle" });
   if (ctx.vehicle) {
@@ -165,12 +177,13 @@ export async function runQuickDiagnosis(messages: Msg[], complaint: string, ctx:
     await call("request_driver_action", { action: "idle", instruction: "Back to idle" });
   }
   evidence.code_lookups = await lookups;
+  evidence.code_explanations = (await explanations).filter(Boolean);
 
   messages.push({
     role: "user",
     content: `${diagnoseRequest(complaint)}
 
-Every measurement has already been collected for you (below): codes, freeze frame, knowledge-base entries, and live sensor windows${ctx.vehicle ? " at idle and at a steady 2500 rpm" : " at idle"}. Do not ask for more data. Reason over these numbers and call submit_diagnosis now with the complete report. Keep it tight: 3-7 repair steps, only the parts actually needed, cite measured values as evidence.
+Every measurement has already been collected for you (below): codes, freeze frame, knowledge-base entries, and live sensor windows${ctx.vehicle ? " at idle and at a steady 2500 rpm" : " at idle"}. Do not ask for more data. Reason over these numbers and call submit_diagnosis now with the complete report. For every code, say in plain words what it means on this make (code_explanations has a make-specific explanation; a database entry of "not in the database" is a manufacturer code you should explain from your knowledge of this make) and how to fix it. Keep it tight: 3-7 repair steps, only the parts actually needed, cite measured values as evidence.
 
 <measurements>
 ${JSON.stringify(evidence)}
