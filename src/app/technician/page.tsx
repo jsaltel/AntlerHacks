@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, type ClipboardEvent } from "react";
+import { isAttachable, kindOf, type AttachmentKind } from "@/lib/agent/attachments";
 import { SCENARIOS } from "@/lib/obd/simulator";
 import { ConnectionBar } from "@/components/ConnectionBar";
 import { useDiagnostics } from "@/components/DiagnosticsProvider";
@@ -7,20 +8,7 @@ import { DiagnosisReport, DtcPanel, Gauges, Timeline } from "@/components/Panels
 
 const SUGGESTIONS = ["What do my trouble codes mean?", "Is my car safe to drive right now?", "My engine idles rough when cold. What could it be?", "What does P0420 mean and how much does it cost to fix?"];
 
-type AttachmentKind = "image" | "video" | "log";
 type Attachment = { id: string; file: File; url: string; kind: AttachmentKind };
-
-function kindOf(file: File): AttachmentKind {
-  if (file.type.startsWith("image/") || /\.(png|jpe?g|gif|webp|heic|bmp|svg)$/i.test(file.name)) return "image";
-  if (file.type.startsWith("video/") || /\.(mp4|webm|mov|m4v|ogv)$/i.test(file.name)) return "video";
-  return "log";
-}
-
-function isAttachable(file: File) {
-  if (file.type.startsWith("image/") || file.type.startsWith("video/")) return true;
-  if (/^(text\/|application\/json)/.test(file.type)) return true;
-  return /\.(png|jpe?g|gif|webp|heic|bmp|svg|mp4|webm|mov|m4v|ogv|log|txt|csv|json)$/i.test(file.name);
-}
 
 function filesFromClipboard(data: DataTransfer | null) {
   if (!data) return [];
@@ -45,15 +33,6 @@ function AttachmentPreview({ item, onRemove }: { item: Attachment; onRemove: (id
     <div className="relative" title={item.file.name}>
       {item.kind === "image" ? (
         <img src={item.url} alt={item.file.name} className="h-12 w-12 rounded-md object-cover" />
-      ) : item.kind === "video" ? (
-        <div className="relative h-12 w-12 overflow-hidden rounded-md bg-page">
-          <video src={item.url} muted playsInline preload="metadata" className="h-full w-full object-cover" />
-          <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/35">
-            <svg viewBox="0 0 12 12" className="h-4 w-4 fill-white" aria-hidden>
-              <path d="M3 1.5v9l8-4.5z" />
-            </svg>
-          </span>
-        </div>
       ) : (
         <div className="flex h-12 min-w-12 items-center justify-center rounded-md border border-line bg-page px-1.5">
           <span className="font-mono text-[10px] leading-none text-ink-2">{item.file.name.slice(0, 10)}</span>
@@ -86,7 +65,9 @@ export default function Technician() {
   }, []);
   const addFiles = (list: FileList | File[] | null) => {
     if (!list?.length) return;
-    const next = Array.from(list).map((file) => ({
+    const next = Array.from(list)
+      .filter(isAttachable)
+      .map((file) => ({
       id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
       file,
       url: URL.createObjectURL(file),
@@ -109,7 +90,24 @@ export default function Technician() {
     });
     requestAnimationFrame(() => focusComplaint());
   };
+  const consumeAttachments = () => {
+    const current = attachmentsRef.current;
+    const files = current.map((a) => a.file);
+    for (const a of current) URL.revokeObjectURL(a.url);
+    attachmentsRef.current = [];
+    setAttachments([]);
+    return files;
+  };
   const { live, dtcs, complaint, setComplaint, running, items, diagnosis, usage, cost, testLabel, connected, isSim, scenario, actualScenario, run, send, newChat, stop } = useDiagnostics();
+  const submitChat = () => {
+    if (running) return;
+    const files = attachmentsRef.current.map((a) => a.file);
+    if (!complaint.trim() && files.length === 0) return;
+    const q = complaint;
+    consumeAttachments();
+    setComplaint("");
+    send(q, { files });
+  };
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-5">
       <ConnectionBar title="AI technician" />
@@ -157,9 +155,7 @@ export default function Technician() {
               className="mt-3 border-t border-line pt-3"
               onSubmit={(e) => {
                 e.preventDefault();
-                const q = complaint;
-                setComplaint("");
-                send(q);
+                submitChat();
               }}
             >
               <div
@@ -185,15 +181,15 @@ export default function Technician() {
                     ref={fileInputRef}
                     id="technician-attachments"
                     type="file"
-                    accept="image/*,video/*,.log,.txt,.csv,.json"
+                    accept="image/*,.log,.txt,.csv,.json"
                     multiple
                     className="sr-only"
                     onChange={(e) => addFiles(e.target.files)}
                   />
                   <label
                     htmlFor="technician-attachments"
-                    title="add an image, video or log..."
-                    aria-label="add an image, video or log..."
+                    title="add an image or log..."
+                    aria-label="add an image or log..."
                     className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-lg leading-none text-ink-2 hover:bg-page hover:text-ink"
                   >
                     +
@@ -206,7 +202,7 @@ export default function Technician() {
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
-                        e.currentTarget.form?.requestSubmit();
+                        submitChat();
                       }
                     }}
                     rows={1}
@@ -220,7 +216,9 @@ export default function Technician() {
                 <button
                   type="button"
                   onClick={() => {
-                    run();
+                    if (running) return;
+                    const files = consumeAttachments();
+                    run(files);
                     setComplaint("");
                   }}
                   disabled={!connected || running}
@@ -235,7 +233,7 @@ export default function Technician() {
                     Stop
                   </button>
                 ) : (
-                  <button type="submit" disabled={!complaint.trim()} className="ml-auto rounded-lg bg-accent px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40">
+                  <button type="button" onClick={submitChat} disabled={!complaint.trim() && attachments.length === 0} className="ml-auto rounded-lg bg-accent px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40">
                     Send
                   </button>
                 )}

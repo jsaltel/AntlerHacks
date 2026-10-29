@@ -8,6 +8,7 @@ import { BleTransport } from "@/lib/obd/ble";
 import { DASHBOARD_PIDS } from "@/lib/obd/pids";
 import type { WireLogEntry } from "@/lib/obd/transport";
 import type Anthropic from "@anthropic-ai/sdk";
+import { filesToContent, kindOf } from "@/lib/agent/attachments";
 import { diagnoseRequest, runConversation, type AgentEvent } from "@/lib/agent/runner";
 import type { Diagnosis, MonitorSample } from "@/lib/agent/executor";
 import { ConfirmClearModal, DriverActionModal, type TimelineItem } from "@/components/Panels";
@@ -167,16 +168,29 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
   }, []);
 
   /** Sends one chat message to the technician; the conversation continues across messages. */
-  const send = async (text: string, shown = text) => {
-    if (!text.trim() || running) return;
+  const send = async (text: string, extra?: { shown?: string; files?: File[] }) => {
+    const files = extra?.files;
+    const shown = extra?.shown ?? text;
+    if ((!text.trim() && !files?.length) || running) return;
     const elm = elmRef.current ?? undefined;
     const ac = new AbortController();
     abortRef.current = ac;
     setRunning(true);
-    setItems((prev) => [...prev, { id: ++idRef.current, kind: "user", text: shown }]);
+    const attachments = files?.map((file) => ({ name: file.name, kind: kindOf(file), url: URL.createObjectURL(file) }));
+    const label = shown.trim() || (files?.length ? "Please look at the attached file(s)." : shown);
+    setItems((prev) => [...prev, { id: ++idRef.current, kind: "user", text: label, attachments }]);
     const messages = messagesRef.current;
     const before = messages.length;
-    messages.push({ role: "user", content: elm ? text : `${text}\n\n[No vehicle is connected right now.]` });
+    const body = `${text.trim() || (files?.length ? "Please look at the attached file(s)." : "")}${elm ? "" : "\n\n[No vehicle is connected right now.]"}`;
+    try {
+      const content: Anthropic.Beta.BetaContentBlockParam[] = [...(files?.length ? await filesToContent(files) : []), { type: "text", text: body }];
+      messages.push({ role: "user", content });
+    } catch (e) {
+      messages.length = before;
+      applyEvent({ type: "error", error: (e as Error).message });
+      setRunning(false);
+      return;
+    }
     const sim = elm?.transport instanceof SimulatorTransport ? elm.transport.vehicle : undefined;
     try {
       await runConversation(
@@ -216,12 +230,15 @@ export function DiagnosticsProvider({ children }: { children: React.ReactNode })
     }
   };
 
-  const run = () => send(diagnoseRequest(complaint), `Run a full diagnosis${complaint ? `: ${complaint}` : ""}`);
+  const run = (files?: File[]) => send(diagnoseRequest(complaint), { shown: `Run a full diagnosis${complaint ? `: ${complaint}` : ""}`, files });
 
   const newChat = () => {
     abortRef.current?.abort();
     messagesRef.current = [];
-    setItems([]);
+    setItems((prev) => {
+      for (const it of prev) if (it.kind === "user") it.attachments?.forEach((a) => URL.revokeObjectURL(a.url));
+      return [];
+    });
     setDiagnosis(null);
     setUsage(null);
   };
@@ -289,8 +306,8 @@ type DiagnosticsState = {
   isSim: boolean;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
-  run: () => Promise<void>;
-  send: (text: string) => Promise<void>;
+  run: (files?: File[]) => Promise<void>;
+  send: (text: string, extra?: { shown?: string; files?: File[] }) => Promise<void>;
   newChat: () => void;
   stop: () => void;
 };
