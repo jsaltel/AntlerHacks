@@ -183,7 +183,7 @@ export async function runQuickDiagnosis(messages: Msg[], complaint: string, ctx:
     role: "user",
     content: `${diagnoseRequest(complaint)}
 
-Every measurement has already been collected for you (below): codes, freeze frame, knowledge-base entries, and live sensor windows${ctx.vehicle ? " at idle and at a steady 2500 rpm" : " at idle"}. Do not ask for more data. Reason over these numbers and call submit_diagnosis now with the complete report. For every code, say in plain words what it means on this make (code_explanations has a make-specific explanation; a database entry of "not in the database" is a manufacturer code you should explain from your knowledge of this make) and how to fix it. Keep it tight: 3-7 repair steps, only the parts actually needed, cite measured values as evidence.
+Every measurement has already been collected for you (below): codes, freeze frame, knowledge-base entries, and live sensor windows${ctx.vehicle ? " at idle and at a steady 2500 rpm" : " at idle"}. Do not ask for more data. Reason over these numbers and call submit_diagnosis now with the complete report. For every code, say in plain words what it means on this make (code_explanations has a make-specific explanation; a database entry of "not in the database" is a manufacturer code you should explain from your knowledge of this make) and how to fix it. Keep it short and plain for the car owner: no jargon, at most 5 repair steps per cause, only the parts actually needed, and cite measured values as evidence.
 
 <measurements>
 ${JSON.stringify(evidence)}

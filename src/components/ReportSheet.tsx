@@ -34,7 +34,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 /** A code with its database name and the technician's plain-language meaning and fix cost for this make. */
 function CodeRow({ code, kind, db, vin }: { code: string; kind: string; db?: DtcLookup; vin?: string | null }) {
   const { data: x } = useDtcExplanation(code, vin);
-  const title = db && db.source !== "unknown" ? db.title : (x?.system ?? db?.title ?? "…");
+  const title = db && db.source !== "unknown" ? db.title : (x?.title ?? db?.title ?? "…");
   return (
     <tr className="border-t border-[#efefef] align-top">
       <td className="py-2 font-mono font-semibold">{code}</td>

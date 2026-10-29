@@ -1,4 +1,5 @@
 "use client";
+import { useDiagnostics } from "./DiagnosticsProvider";
 import { useEffect, useRef, useState } from "react";
 import { PID_BY_KEY } from "@/lib/obd/pids";
 import { lookupDtc } from "@/lib/kb/dtcs";
@@ -62,80 +63,74 @@ export function DtcPanel({ dtcs, vin }: { dtcs: { stored: string[]; pending: str
       {!dtcs && <p className="text-sm text-muted">Not read yet.</p>}
       {dtcs && rows.length === 0 && <p className="text-sm text-good">✓ No codes stored or pending.</p>}
       <ul className="space-y-3">
-        {rows.map(([c, kind], i) => (
-          <DtcRow key={c + kind} code={c} kind={kind} db={found[c]} vin={vin} open={i === 0} />
+        {rows.map(([c, kind]) => (
+          <DtcRow key={c + kind} code={c} kind={kind} db={found[c]} vin={vin} />
         ))}
       </ul>
     </div>
   );
 }
 
-const SEVERITY_TEXT: Record<string, string> = { low: "text-good", moderate: "text-warning", high: "text-serious", critical: "text-critical" };
+const SEVERITY_PILL: Record<string, string> = { low: "bg-good/15 text-good", moderate: "bg-warning/15 text-warning", high: "bg-serious/15 text-serious", critical: "bg-critical/15 text-critical" };
+const DIY_TEXT: Record<string, string> = { easy: "Easy DIY", moderate: "Moderate DIY", hard: "Hard DIY", shop: "Shop job" };
 
-/** One code: the database meaning, plus the AI technician's explanation and fix for this make. */
-function DtcRow({ code, kind, db, vin, open }: { code: string; kind: string; db?: DtcLookup; vin?: string | null; open: boolean }) {
+/** One code as a heading, a one-line meaning, and what to do about it. */
+function DtcRow({ code, kind, db, vin }: { code: string; kind: string; db?: DtcLookup; vin?: string | null }) {
   const info = lookupDtc(code);
   const ai = useDtcExplanation(code, vin);
   const x = ai.data;
-  // A code the database can't name gets its name from the technician instead.
-  const title = db && db.source !== "unknown" ? db.title : (x?.system ?? db?.title ?? info.title);
+  // The official name when the database has one, otherwise the technician's plain name.
+  const title = db && db.source !== "unknown" ? db.title : (x?.title ?? db?.title ?? info.title);
   return (
-    <li className="rounded-lg border border-line bg-surface-2/50">
-      <details open={open} className="group">
-        <summary className="flex cursor-pointer list-none items-start gap-3 p-3">
-          <span className="rounded-md bg-surface-2 px-2 py-0.5 font-mono text-sm text-ink">{code}</span>
-          <div className="min-w-0 flex-1">
-            <div className="text-sm text-ink">{title}</div>
-            <div className="text-xs text-muted">
-              {kind} · {db?.system ?? info.system}
-              {db?.make ? ` · ${db.make} code` : ""}
-              {x && (
-                <>
-                  {" · "}
-                  <span className={SEVERITY_TEXT[x.severity]}>{x.severity}</span>
-                  {` · ${x.safe_to_drive ? "safe to drive" : "not safe to drive"}`}
-                </>
-              )}
-            </div>
-            {x && <p className="mt-1 text-xs leading-relaxed text-ink-2">{x.meaning}</p>}
-            {ai.loading && (
-              <p className="mt-1 flex items-center gap-1.5 text-xs text-muted">
-                <span className="pulse inline-block h-1.5 w-1.5 rounded-full bg-accent" /> AI technician is looking this up…
-              </p>
-            )}
-            {ai.error && <p className="mt-1 text-xs text-muted">Couldn&apos;t get an explanation: {ai.error}</p>}
+    <li className="rounded-lg border border-line bg-surface-2/50 p-4">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="font-mono text-xl font-bold text-ink">{code}</span>
+        <span className="text-base leading-snug font-semibold text-ink">{title}</span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+        <span className="rounded-full bg-surface-2 px-2 py-0.5 text-ink-2">{kind}</span>
+        {x && <span className={`rounded-full px-2 py-0.5 font-medium ${SEVERITY_PILL[x.severity]}`}>{x.severity}</span>}
+        {x && <span className={`rounded-full px-2 py-0.5 font-medium ${x.safe_to_drive ? "bg-good/15 text-good" : "bg-critical/15 text-critical"}`}>{x.safe_to_drive ? "Safe to drive" : "Don't drive"}</span>}
+      </div>
+      {ai.loading && (
+        <p className="mt-3 flex items-center gap-1.5 text-xs text-muted">
+          <span className="pulse inline-block h-1.5 w-1.5 rounded-full bg-accent" /> AI technician is looking this up…
+        </p>
+      )}
+      {ai.error && <p className="mt-3 text-xs text-muted">Couldn&apos;t get an explanation: {ai.error}</p>}
+      {x && (
+        <>
+          <p className="mt-3 text-sm leading-relaxed text-ink-2">{x.meaning}</p>
+          <div className="mt-4 mb-2 text-[11px] font-semibold tracking-wide text-muted uppercase">What to do</div>
+          <ol className="space-y-2">
+            {x.how_to_fix.map((s, i) => (
+              <li key={i} className="flex gap-2.5 text-sm text-ink">
+                <span className="tabular flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent/15 text-[11px] font-semibold text-accent">{i + 1}</span>
+                {s}
+              </li>
+            ))}
+          </ol>
+          <p className="mt-3 text-xs text-ink-2">
+            <span className="font-medium text-ink">Until then:</span> {x.driving_advice}
+          </p>
+          <div className="tabular mt-3 flex flex-wrap gap-1.5 text-[11px]">
+            <span className="rounded-full border border-line px-2 py-0.5 text-ink-2">
+              ${x.est_cost_usd.low}–${x.est_cost_usd.high}
+            </span>
+            <span className="rounded-full border border-line px-2 py-0.5 text-ink-2">{DIY_TEXT[x.diy]}</span>
           </div>
-          {x && <span className="mt-0.5 text-xs text-muted transition-transform group-open:rotate-90">›</span>}
-        </summary>
-        {x && (
-          <div className="space-y-3 border-t border-line px-3 py-3 text-xs text-ink-2">
-            <p className="text-ink">{x.driving_advice}</p>
-            <div>
-              <div className="mb-1 font-medium text-muted">Likely causes</div>
-              <ul className="space-y-0.5">
-                {x.likely_causes.map((c) => (
-                  <li key={c.cause} className="flex gap-2">
-                    <span className={`w-12 shrink-0 ${c.likelihood === "high" ? "text-serious" : c.likelihood === "medium" ? "text-warning" : "text-muted"}`}>{c.likelihood}</span>
-                    {c.cause}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <div className="mb-1 font-medium text-muted">How to fix</div>
-              <ol className="list-decimal space-y-0.5 pl-4">
-                {x.how_to_fix.map((s, i) => (
-                  <li key={i}>{s}</li>
-                ))}
-              </ol>
-            </div>
-            <div className="tabular text-muted">
-              {x.diy === "shop" ? "Shop job" : `DIY: ${x.diy}`} · ${x.est_cost_usd.low}–${x.est_cost_usd.high}
-            </div>
-            {x.note && <p className="text-muted italic">{x.note}</p>}
-          </div>
-        )}
-      </details>
+          <details className="mt-3 text-xs">
+            <summary className="cursor-pointer text-muted">Likely causes</summary>
+            <ul className="mt-1.5 space-y-1 text-ink-2">
+              {x.likely_causes.map((c) => (
+                <li key={c.cause}>
+                  <span className={c.likelihood === "high" ? "text-serious" : c.likelihood === "medium" ? "text-warning" : "text-muted"}>●</span> {c.cause}
+                </li>
+              ))}
+            </ul>
+          </details>
+        </>
+      )}
     </li>
   );
 }
@@ -267,119 +262,138 @@ const SEVERITY: Record<Diagnosis["severity"], { label: string; icon: string; col
   stop_driving: { label: "Stop driving", icon: "●", color: "var(--critical)" },
 };
 
+/** A code as a bold heading: the code and its plain name. */
+function CodeHeading({ code, db, vin }: { code: string; db?: DtcLookup; vin?: string | null }) {
+  const { data: x } = useDtcExplanation(code, vin);
+  const title = db && db.source !== "unknown" ? db.title : (x?.title ?? db?.title ?? lookupDtc(code).title);
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-3">
+      <span className="font-mono text-lg font-bold text-ink">{code}</span>
+      <span className="text-base font-semibold text-ink">{title}</span>
+    </div>
+  );
+}
+
+/**
+ * The diagnosis, short: the codes as headings, the verdict, the most likely cause with what
+ * to do, and next steps. Evidence, other causes and ruled-out causes fold away under Details.
+ */
 export function DiagnosisReport({ d, onOpen }: { d: Diagnosis; onOpen?: () => void }) {
+  const { dtcs, vehicle } = useDiagnostics();
+  const codes = dtcs ? [...new Set([...dtcs.stored, ...dtcs.pending, ...dtcs.permanent])] : [];
+  const found = useDtcLookups(codes, vehicle?.vin);
   const sev = SEVERITY[d.severity];
+  const [top, ...others] = d.root_causes;
+  const steps = top?.repair_steps?.length ? top.repair_steps : top ? [top.fix] : [];
+  const parts = top?.parts ?? [];
   return (
     <div className="panel p-5" id="report">
-      <div className="mb-3 flex items-center gap-3">
+      {codes.length > 0 && (
+        <div className="mb-4 space-y-1 border-b border-line pb-4">
+          {codes.map((c) => (
+            <CodeHeading key={c} code={c} db={found[c]} vin={vehicle?.vin} />
+          ))}
+        </div>
+      )}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <span className="rounded-full px-2.5 py-1 text-xs font-semibold" style={{ background: sev.color, color: d.severity === "monitor" ? "#0b0b0b" : "#fff" }}>
           {sev.icon} {sev.label}
         </span>
-        <span className="text-xs text-ink-2">{d.safe_to_drive ? "Safe to drive" : "Not safe to drive"}</span>
+        <span className={`text-xs font-medium ${d.safe_to_drive ? "text-good" : "text-critical"}`}>{d.safe_to_drive ? "Safe to drive" : "Don't drive"}</span>
         {onOpen && (
           <button onClick={onOpen} className="ml-auto text-xs text-accent hover:underline">
             Open report sheet
           </button>
         )}
       </div>
-      <p className="mb-4 text-sm leading-relaxed text-ink">{d.summary}</p>
-      <h3 className="mb-2 text-xs font-medium tracking-wide text-muted uppercase">Root causes</h3>
-      <ol className="space-y-3">
-        {d.root_causes.map((rc, i) => (
-          <li key={i} className="rounded-lg border border-line bg-surface-2 p-3">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-ink">
-                {i + 1}. {rc.cause}
-              </span>
-              <span className="tabular ml-auto text-xs text-ink-2">{Math.round(rc.confidence * 100)}%</span>
-            </div>
-            <div className="mt-1.5 h-1 w-full rounded-full bg-page">
-              <div className="h-1 rounded-full bg-accent" style={{ width: `${rc.confidence * 100}%` }} />
-            </div>
-            <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-ink-2">
-              {rc.evidence.map((e, j) => (
-                <li key={j}>{e}</li>
-              ))}
-            </ul>
-            <div className="mt-2 text-xs text-ink">
-              <span className="text-muted">Fix: </span>
-              {rc.fix}
-            </div>
-            <div className="tabular mt-1 text-xs text-muted">
-              {rc.diy_difficulty === "shop" ? "Shop job" : `DIY: ${rc.diy_difficulty}`} · ${rc.est_cost_usd[0]}–${rc.est_cost_usd[1]}
-              {rc.labor_hours !== undefined && ` · ${rc.labor_hours} h labor`}
-            </div>
-            {(rc.repair_steps?.length || rc.parts?.length || rc.tools_needed?.length) && (
-              <details className="mt-2" open={i === 0}>
-                <summary className="cursor-pointer text-xs text-accent">Repair plan</summary>
-                {rc.repair_steps && rc.repair_steps.length > 0 && (
-                  <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-ink-2">
-                    {rc.repair_steps.map((s, j) => (
-                      <li key={j}>{s}</li>
-                    ))}
-                  </ol>
-                )}
-                {rc.parts && rc.parts.length > 0 && (
-                  <table className="tabular mt-3 w-full text-xs">
-                    <thead>
-                      <tr className="text-left text-muted">
-                        <th className="pb-1 font-normal">Part</th>
-                        <th className="pb-1 text-right font-normal">Qty</th>
-                        <th className="pb-1 text-right font-normal">Each</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rc.parts.map((p, j) => (
-                        <tr key={j} className="border-t border-line text-ink-2">
-                          <td className="py-1">
-                            {p.name}
-                            {p.part_number && <span className="ml-1 font-mono text-muted">{p.part_number}</span>}
-                          </td>
-                          <td className="py-1 text-right">{p.qty}</td>
-                          <td className="py-1 text-right">${p.est_price_usd}</td>
-                        </tr>
-                      ))}
-                      <tr className="border-t border-line text-ink">
-                        <td className="py-1">Parts total</td>
-                        <td />
-                        <td className="py-1 text-right">${rc.parts.reduce((a, p) => a + p.qty * p.est_price_usd, 0).toFixed(0)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                )}
-                {rc.tools_needed && rc.tools_needed.length > 0 && (
-                  <div className="mt-2 text-xs text-ink-2">
-                    <span className="text-muted">Tools: </span>
-                    {rc.tools_needed.join(", ")}
-                  </div>
-                )}
-              </details>
-            )}
-          </li>
-        ))}
-      </ol>
-      {d.ruled_out.length > 0 && (
-        <>
-          <h3 className="mt-4 mb-2 text-xs font-medium tracking-wide text-muted uppercase">Ruled out</h3>
-          <ul className="space-y-1 text-xs text-ink-2">
-            {d.ruled_out.map((r, i) => (
-              <li key={i}>
-                <span className="text-ink line-through decoration-muted">{r.cause}</span>: {r.why}
+      <p className="text-[15px] leading-relaxed text-ink">{d.summary}</p>
+
+      {top && (
+        <div className="mt-4 rounded-lg border border-line bg-surface-2 p-4">
+          <div className="text-[11px] font-semibold tracking-wide text-muted uppercase">Most likely cause</div>
+          <div className="mt-0.5 flex items-baseline gap-2">
+            <span className="text-base font-semibold text-ink">{top.cause}</span>
+            <span className="tabular text-xs text-ink-2">{Math.round(top.confidence * 100)}%</span>
+          </div>
+          <div className="tabular mt-2 flex flex-wrap gap-1.5 text-[11px]">
+            <span className="rounded-full border border-line px-2 py-0.5 text-ink-2">
+              ${top.est_cost_usd[0]}–${top.est_cost_usd[1]}
+            </span>
+            <span className="rounded-full border border-line px-2 py-0.5 text-ink-2">{DIY_TEXT[top.diy_difficulty]}</span>
+            {top.labor_hours !== undefined && <span className="rounded-full border border-line px-2 py-0.5 text-ink-2">{top.labor_hours} h</span>}
+          </div>
+          <div className="mt-4 mb-2 text-[11px] font-semibold tracking-wide text-muted uppercase">What to do</div>
+          <ol className="space-y-2">
+            {steps.map((s, i) => (
+              <li key={i} className="flex gap-2.5 text-sm text-ink">
+                <span className="tabular flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent/15 text-[11px] font-semibold text-accent">{i + 1}</span>
+                {s}
+              </li>
+            ))}
+          </ol>
+          {parts.length > 0 && (
+            <details className="mt-3 text-xs">
+              <summary className="tabular cursor-pointer text-muted">Parts · ${parts.reduce((a, p) => a + p.qty * p.est_price_usd, 0).toFixed(0)}</summary>
+              <ul className="tabular mt-1.5 space-y-0.5 text-ink-2">
+                {parts.map((p, j) => (
+                  <li key={j} className="flex justify-between gap-3">
+                    <span>
+                      {p.qty > 1 ? `${p.qty} × ` : ""}
+                      {p.name}
+                    </span>
+                    <span>${(p.qty * p.est_price_usd).toFixed(0)}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
+
+      {d.next_steps.length > 0 && (
+        <div className="mt-4">
+          <div className="mb-2 text-[11px] font-semibold tracking-wide text-muted uppercase">Next</div>
+          <ul className="space-y-1.5">
+            {d.next_steps.map((s, i) => (
+              <li key={i} className="flex gap-2.5 text-sm text-ink-2">
+                <span className="mt-0.5 h-4 w-4 shrink-0 rounded border border-line" aria-hidden="true" />
+                {s}
               </li>
             ))}
           </ul>
-        </>
+        </div>
       )}
-      {d.next_steps.length > 0 && (
-        <>
-          <h3 className="mt-4 mb-2 text-xs font-medium tracking-wide text-muted uppercase">Next steps</h3>
-          <ol className="list-decimal space-y-1 pl-5 text-xs text-ink-2">
-            {d.next_steps.map((s, i) => (
-              <li key={i}>{s}</li>
+
+      <details className="mt-4 text-xs text-ink-2">
+        <summary className="cursor-pointer text-muted">Details: evidence{others.length ? ", other possible causes" : ""}{d.ruled_out.length ? ", ruled out" : ""}</summary>
+        {top && (
+          <ul className="mt-2 list-disc space-y-0.5 pl-5">
+            {top.evidence.map((e, j) => (
+              <li key={j}>{e}</li>
             ))}
-          </ol>
-        </>
-      )}
+          </ul>
+        )}
+        {others.length > 0 && (
+          <div className="mt-3 space-y-1.5">
+            <div className="font-medium text-muted">Other possible causes</div>
+            {others.map((rc, i) => (
+              <div key={i}>
+                <span className="text-ink">{rc.cause}</span> <span className="tabular text-muted">{Math.round(rc.confidence * 100)}%</span> · {rc.fix}
+              </div>
+            ))}
+          </div>
+        )}
+        {d.ruled_out.length > 0 && (
+          <div className="mt-3 space-y-1">
+            <div className="font-medium text-muted">Ruled out</div>
+            {d.ruled_out.map((r, i) => (
+              <div key={i}>
+                <span className="text-ink line-through decoration-muted">{r.cause}</span>: {r.why}
+              </div>
+            ))}
+          </div>
+        )}
+      </details>
     </div>
   );
 }

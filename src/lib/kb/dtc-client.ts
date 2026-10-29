@@ -40,7 +40,7 @@ export function useDtcLookups(codes: string[], vin?: string | null): Record<stri
 }
 
 const explained = new Map<string, Promise<DtcExplanation>>();
-const STORE = "torque.dtc-explain.v1:";
+const STORE = "torque.dtc-explain.v2:";
 
 /** The AI technician's explanation of one code for this car's make, cached in memory and in the browser. */
 export function fetchDtcExplanation(code: string, vin?: string | null): Promise<DtcExplanation> {

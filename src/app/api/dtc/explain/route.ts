@@ -7,7 +7,7 @@ import { brandFromVin, brandLabel } from "@/lib/kb/vin";
 
 export const runtime = "nodejs";
 
-const SYSTEM = `You are a master automotive technician explaining one diagnostic trouble code to a car owner. Be specific to the make (and engine, if the VIN tells you): use the manufacturer's own name for the system (for example VANOS or Valvetronic on BMW) and the causes and fixes technicians actually see on that make. If the local database already gives a definition, build on it; if it has none, use your knowledge of that manufacturer's codes, and say in the note when the definition varies by engine or model year. Plain language, no filler. Prices in US dollars for parts plus typical independent-shop labor.`;
+const SYSTEM = `You are a master automotive technician explaining one trouble code to a car owner who is not a mechanic. Use what you know about this make (and engine, if the VIN tells you) to get the meaning, causes and fixes right, but write for the owner: short plain sentences, everyday words, no acronyms or part numbers, no hedging. Keep to the word limits in the schema. If the local database has no definition, use your knowledge of that manufacturer's codes. Prices in US dollars for parts plus typical independent-shop labor.`;
 
 // Explanations don't change for a given code and make, so keep them for the life of the server.
 const cache = new Map<string, DtcExplanation>();
@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   const code = (raw ?? "").trim().toUpperCase();
   if (!/^[PCBU][0-9A-F]{4}$/.test(code)) return Response.json({ error: "Invalid code" }, { status: 400 });
   const brand = brandFromVin(vin);
-  const key = `${brand ?? "?"}:${code}`;
+  const key = `v2:${brand ?? "?"}:${code}`;
   const hit = cache.get(key);
   if (hit) return Response.json({ explanation: hit });
 
