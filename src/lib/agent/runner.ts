@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { ToolInputs, type ToolName } from "./tools";
 import { executeTool, type ExecContext } from "./executor";
+import { describeVehicle, type DecodedVehicle } from "../vehicle/vin";
 
 type Msg = Anthropic.Beta.BetaMessageParam;
 
@@ -22,12 +23,18 @@ const MAX_STEPS = 40;
  * next to the OBD adapter.
  */
 export async function runAgent(complaint: string, ctx: ExecContext, emit: (e: AgentEvent) => void): Promise<void> {
-  const messages: Msg[] = [{ role: "user", content: diagnoseRequest(complaint) }];
+  const messages: Msg[] = [{ role: "user", content: diagnoseRequest(complaint, ctx.decodedVehicle) }];
   return runConversation(messages, ctx, emit);
 }
 
-export function diagnoseRequest(complaint: string) {
-  return `Diagnose this vehicle. Owner's complaint: "${complaint || "No specific complaint; run a full health check."}"`;
+export function diagnoseRequest(complaint: string, decoded?: DecodedVehicle | null) {
+  return `${vehicleLine(decoded)}Diagnose this vehicle. Owner's complaint: "${complaint || "No specific complaint; run a full health check."}"`;
+}
+
+/** "Vehicle: 2013 Ford F-150 SuperCrew, 3.5L V6 EcoBoost (Pickup)." from the VIN decode, or nothing. */
+export function vehicleLine(d?: DecodedVehicle | null) {
+  const car = describeVehicle(d ?? null);
+  return car ? `Vehicle: ${car}${d?.engine ? `, ${d.engine}` : ""}${d?.bodyClass ? ` (${d.bodyClass})` : ""}.\n` : "";
 }
 
 /**

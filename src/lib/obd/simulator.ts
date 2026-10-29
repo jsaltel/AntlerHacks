@@ -23,14 +23,22 @@ interface ScenarioFaults {
 
 const FAULTS: Record<ScenarioId, ScenarioFaults> = {
   healthy: { stored: [], pending: [], freeze: null },
-  vacuum_leak: { stored: ["P0171", "P0174"], pending: [], freeze: { rpm: 742, speed: 0, coolant: 88, load: 21, stft1: 6.3, ltft1: 17.2, stft2: 5.5, ltft2: 16.4, map: 36, maf: 2.6, throttle: 12, iat: 31 } },
-  dirty_maf: { stored: ["P0171", "P0174"], pending: ["P0101"], freeze: { rpm: 2380, speed: 64, coolant: 91, load: 38, stft1: 7.8, ltft1: 18.8, stft2: 7.0, ltft2: 18.0, map: 52, maf: 9.4, throttle: 21, iat: 29 } },
-  misfire_cyl3: { stored: ["P0303", "P0300"], pending: [], freeze: { rpm: 768, speed: 0, coolant: 90, load: 24, stft1: 4.7, ltft1: 3.1, stft2: 2.3, ltft2: 1.6, map: 38, maf: 3.3, throttle: 12, iat: 30 } },
-  cat_efficiency: { stored: ["P0420"], pending: [], freeze: { rpm: 2050, speed: 72, coolant: 92, load: 33, stft1: 0.8, ltft1: 2.3, stft2: 0.8, ltft2: 1.6, map: 45, maf: 11.2, throttle: 18, iat: 27 } },
-  thermostat_stuck_open: { stored: ["P0128"], pending: [], freeze: { rpm: 1980, speed: 88, coolant: 63, load: 30, stft1: 1.6, ltft1: 3.9, stft2: 1.6, ltft2: 3.1, map: 44, maf: 12.5, throttle: 17, iat: 22 } },
+  vacuum_leak: { stored: ["P0171", "P0174"], pending: [], freeze: { rpm: 742, speed: 0, coolant: 88, load: 21, stft1: 6.3, ltft1: 17.2, stft2: 5.5, ltft2: 16.4, map: 36, maf: 3.9, throttle: 12, iat: 31 } },
+  dirty_maf: { stored: ["P0171", "P0174"], pending: ["P0101"], freeze: { rpm: 2380, speed: 64, coolant: 91, load: 38, stft1: 7.8, ltft1: 18.8, stft2: 7.0, ltft2: 18.0, map: 52, maf: 27.0, throttle: 21, iat: 29 } },
+  misfire_cyl3: { stored: ["P0303", "P0300"], pending: [], freeze: { rpm: 768, speed: 0, coolant: 90, load: 24, stft1: 4.7, ltft1: 3.1, stft2: 2.3, ltft2: 1.6, map: 38, maf: 2.8, throttle: 12, iat: 30 } },
+  cat_efficiency: { stored: ["P0420"], pending: [], freeze: { rpm: 2050, speed: 72, coolant: 92, load: 33, stft1: 0.8, ltft1: 2.3, stft2: 0.8, ltft2: 1.6, map: 45, maf: 13.3, throttle: 18, iat: 27 } },
+  thermostat_stuck_open: { stored: ["P0128"], pending: [], freeze: { rpm: 1980, speed: 88, coolant: 63, load: 30, stft1: 1.6, ltft1: 3.9, stft2: 1.6, ltft2: 3.1, map: 44, maf: 11.7, throttle: 17, iat: 22 } },
 };
 
-const VIN = "1HGCM82633A004352";
+/** The simulated car for each scenario: real-format VINs (valid check digits) and engine size. */
+export const SIM_VEHICLES: Record<ScenarioId, { vin: string; liters: number }> = {
+  vacuum_leak: { vin: "1FTFW1ET9DFC10312", liters: 3.5 }, // 2013 Ford F-150 EcoBoost V6
+  dirty_maf: { vin: "1GCVKREC7EZ163402", liters: 5.3 }, // 2014 Chevrolet Silverado V8
+  misfire_cyl3: { vin: "19XFC2F52GE228471", liters: 2.0 }, // 2016 Honda Civic
+  cat_efficiency: { vin: "4T1BF1FKXCU514873", liters: 2.5 }, // 2012 Toyota Camry
+  thermostat_stuck_open: { vin: "4S4BSANCXF3301129", liters: 2.5 }, // 2015 Subaru Outback
+  healthy: { vin: "1HGCM82633A004352", liters: 2.4 }, // 2003 Honda Accord
+};
 
 /** Physically-plausible engine model whose outputs depend on the injected fault. */
 export class VehicleModel {
@@ -122,7 +130,7 @@ export class VehicleModel {
     const rpm = this.rpm + n(misfire && this.rpm < 1200 ? 55 : 8);
     const air = rpm / 750;
     const load = Math.min(100, 18 + (rpm - 750) * 0.008 + (this.mode === "cruise" ? 12 : 0) + n(1.5));
-    let maf = 3.4 * air * (load / 22);
+    let maf = 1.3 * SIM_VEHICLES[this.scenario].liters * air * (load / 22);
     if (this.scenario === "dirty_maf") maf *= 0.72;
     if (this.scenario === "vacuum_leak" && this.rpm < 1200) maf *= 0.85;
     const stftBias = misfire ? 4 : this.scenario === "vacuum_leak" ? 5 - 3 * Math.min(1, (rpm - 750) / 1750) : this.scenario === "dirty_maf" ? 6 : 0;
@@ -248,7 +256,7 @@ export class SimulatorTransport implements ObdTransport {
         v.clear();
         return "44";
       case 0x09:
-        if (pid === 0x02) return this.fmt([0x49, 0x02, 0x01, ...[...VIN].map((c) => c.charCodeAt(0))]);
+        if (pid === 0x02) return this.fmt([0x49, 0x02, 0x01, ...[...SIM_VEHICLES[v.scenario].vin].map((c) => c.charCodeAt(0))]);
         return "NO DATA";
       default:
         return "NO DATA";

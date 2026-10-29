@@ -1,10 +1,11 @@
 "use client";
 import { SCENARIOS, type ScenarioId } from "@/lib/obd/simulator";
+import { describeVehicle } from "@/lib/vehicle/vin";
 import { useDiagnostics } from "./DiagnosticsProvider";
 
 /** Adapter picker, simulator scenario and connect button, shared by the Diagnostics and AI Technician tabs. */
 export function ConnectionBar({ title }: { title: string }) {
-  const { mode, setMode, scenario, setScenario, status, connError, vehicle, support, connected, connect, disconnect } = useDiagnostics();
+  const { mode, setMode, scenario, setScenario, status, connError, vehicle, decoded, support, connected, connect, disconnect } = useDiagnostics();
   return (
     <>
       <header className="mb-5 flex flex-wrap items-center gap-4">
@@ -56,6 +57,13 @@ export function ConnectionBar({ title }: { title: string }) {
           <span className={`inline-block h-2 w-2 rounded-full ${connected ? "bg-good" : status === "connecting" ? "pulse bg-warning" : "bg-muted"}`} />
           {connected && vehicle ? (
             <span className="tabular">
+              {describeVehicle(decoded) && (
+                <span className="mr-1 text-sm font-medium text-ink" title={[decoded?.engine, decoded?.bodyClass, decoded?.plant].filter(Boolean).join(" · ")}>
+                  {describeVehicle(decoded)}
+                  {decoded?.engine && <span className="ml-1.5 font-normal text-ink-2">{decoded.engine}</span>}
+                  <span className="mx-1.5 text-muted">·</span>
+                </span>
+              )}
               VIN {vehicle.vin ?? "n/a"} · {vehicle.protocol} · {vehicle.adapter} · {vehicle.transport}
             </span>
           ) : (

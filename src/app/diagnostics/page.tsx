@@ -4,6 +4,7 @@ import { LineChart } from "@/components/LineChart";
 import { ConnectionBar } from "@/components/ConnectionBar";
 import { useDiagnostics } from "@/components/DiagnosticsProvider";
 import { DiagnosisReport, DtcPanel, Gauges, WireLog } from "@/components/Panels";
+import { ConnectedVehicleView } from "@/components/VehicleView";
 
 export default function Diagnostics() {
   const { live, history, dtcs, wire, diagnosis, running, testLabel, connected } = useDiagnostics();
@@ -52,6 +53,7 @@ export default function Diagnostics() {
         </section>
 
         <section className="col-span-12 space-y-4 lg:col-span-4">
+          <ConnectedVehicleView />
           <div className="panel flex items-center justify-between gap-3 p-4">
             <div className="text-sm text-ink-2">
               {running ? "The AI technician is diagnosing this car." : diagnosis ? "Diagnosis report ready." : connected ? "Want a full diagnosis with live tests?" : "Connect, then let the AI technician diagnose the car."}
